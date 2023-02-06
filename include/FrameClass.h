@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 #include "Frame.h"
+#include "CameraCalibration.h"
 
 namespace VO {
     class FrameClass {
@@ -27,19 +28,21 @@ namespace VO {
 
         }
 
-        std::shared_ptr<Frame> getNextFrame();
+        std::shared_ptr<Frame> getNextFrame(const CameraCalibration* calibration);
 
     private:
         std::filesystem::path m_FolderPath{};
         std::vector<std::filesystem::path> m_FileNames{};
         uint32_t m_datasetImagesCount = 0;
 
-        uint32_t m_FrameID = 0;
+        uint32_t m_FrameID = 35;
         Frame *m_CurrentFrame{};
         Frame *m_PreviousFrame{};
 
 
         std::shared_ptr<VO::Frame> readFrame();
+
+        static void makeImagePyramid(Frame *frame, const CameraCalibration* calibration);
     };
 };
 

@@ -63,7 +63,7 @@ namespace Log {
     Logger::Logger() {
         m_File.open(logFileName.c_str(), std::ios::out | std::ios::app);
         m_LogLevel = LOG_LEVEL_TRACE;
-        m_LogType = FILE_LOG;
+        m_LogType = CONSOLE;
 
     }
 
@@ -106,7 +106,7 @@ namespace Log {
     }
 
 // Interface for Error Log
-    void Logger::error(const char *text) noexcept {
+    void Logger::errorInternal(const char *text) noexcept {
         std::string data;
         data.append("[ERROR]: ");
         data.append(text);

@@ -6,6 +6,7 @@
 #define VGIS10_CORE_H
 
 #include "FrameClass.h"
+#include "CameraCalibration.h"
 
 namespace VO {
   class Core {
@@ -20,6 +21,8 @@ namespace VO {
       bool m_IsRunning = false;
 
       std::unique_ptr<FrameClass> m_FrameClass;
+      std::unique_ptr<CameraCalibration> m_CamCal;
+
   };
 };
 

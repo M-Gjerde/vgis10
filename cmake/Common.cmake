@@ -1,0 +1,13 @@
+if (NOT EXISTS "${PROJECT_SOURCE_DIR}/external/fmt/CMakeLists.txt")
+    message(FATAL_ERROR "The submodule ${PROJECT_SOURCE_DIR}/external/fmt not downloaded! GIT_SUBMODULE was turned off or failed. Please update submodules and try again.")
+else ()
+    message("[INFO] Adding FMT from directory: external/fmt")
+    add_subdirectory(external/fmt)
+endif ()
+
+if (NOT EXISTS "${PROJECT_SOURCE_DIR}/external/Sophus/CMakeLists.txt")
+    message(FATAL_ERROR "The submodule ${PROJECT_SOURCE_DIR}/external/Sophus not downloaded! GIT_SUBMODULE was turned off or failed. Please update submodules and try again.")
+else ()
+    message("[INFO] Adding Sophus from directory: external/Sophus")
+    add_subdirectory(external/Sophus)
+endif ()

@@ -1,0 +1,6 @@
+[submodule "external/fmt"]
+	path = external/fmt
+	url = https://github.com/fmtlib/fmt
+[submodule "external/Sophus"]
+	path = external/Sophus
+	url = https://github.com/strasdat/Sophus
