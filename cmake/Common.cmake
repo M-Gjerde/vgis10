@@ -1,3 +1,11 @@
+if (NOT EXISTS "${PROJECT_SOURCE_DIR}/external/yaml-cpp/CMakeLists.txt")
+    message(FATAL_ERROR "The submodule ${PROJECT_SOURCE_DIR}/external/yaml-cpp not downloaded! GIT_SUBMODULE was turned off or failed. Please update submodules and try again.")
+else ()
+    message("[INFO] Adding yaml-cpp from directory: external/yaml-cpp")
+    add_subdirectory(external/yaml-cpp)
+endif ()
+
+
 if (NOT EXISTS "${PROJECT_SOURCE_DIR}/external/fmt/CMakeLists.txt")
     message(FATAL_ERROR "The submodule ${PROJECT_SOURCE_DIR}/external/fmt not downloaded! GIT_SUBMODULE was turned off or failed. Please update submodules and try again.")
 else ()

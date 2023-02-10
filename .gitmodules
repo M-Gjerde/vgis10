@@ -4,3 +4,9 @@
 [submodule "external/Sophus"]
 	path = external/Sophus
 	url = https://github.com/strasdat/Sophus
+[submodule "external/rapidyaml"]
+	path = external/rapidyaml
+	url = https://github.com/biojppm/rapidyaml
+[submodule "external/yaml-cpp"]
+	path = external/yaml-cpp
+	url = https://github.com/jbeder/yaml-cpp

@@ -3,14 +3,15 @@ project(vgis10)
 
 set(CMAKE_CXX_STANDARD 20)
 
+include(cmake/Common.cmake)
+
 include_directories(include)
 include_directories(external/stb_image)
 
 find_package(OpenCV REQUIRED)
-find_package (Eigen3 3.3 REQUIRED NO_MODULE)
+find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 include_directories(${OpenCV_INCLUDE_DIRS})
 
-include(cmake/Common.cmake)
 
 set(SRC_FILES
         src/Main.cpp
@@ -18,10 +19,21 @@ set(SRC_FILES
         src/Core.cpp
         src/Logger.cpp
         src/CameraCalibration.cpp
-        src/PointSelection.cpp)
+        src/PointSelection.cpp
+        src/Tracker.cpp
+        include/TrackerInitializer.h
+        include/ImmaturePoint.h
+        include/HessianBlocks.h
+        src/Optimized/Energy.cpp
+        src/Optimized/AccumulatedSCHessian.cpp
+        src/Optimized/AccumulatedTopHessian.cpp
+        src/HessianBlocks.cpp
+
+        include/Util/IndexThreadReduce.h
+        src/Residuals.cpp)
 
 add_executable(vgis10 ${SRC_FILES})
-target_link_libraries(vgis10 fmt::fmt ${OpenCV_LIBS} Eigen3::Eigen sophus)
+target_link_libraries(vgis10 fmt::fmt ${OpenCV_LIBS} Eigen3::Eigen sophus yaml-cpp::yaml-cpp)
 
 add_custom_command(TARGET vgis10
         POST_BUILD

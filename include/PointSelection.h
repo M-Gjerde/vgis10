@@ -7,17 +7,10 @@
 
 #include "Frame.h"
 #include "CameraCalibration.h"
+#include "Point.h"
 
 namespace VO {
     enum PixelSelectorStatus {PIXSEL_VOID=0, PIXSEL_1, PIXSEL_2, PIXSEL_3};
-
-
-    typedef Eigen::Matrix<float,3,3> Mat33f;
-    typedef Eigen::Matrix<float,10,3> Mat103f;
-    typedef Eigen::Matrix<float,2,2> Mat22f;
-    typedef Eigen::Matrix<float,3,1> Vec3f;
-    typedef Eigen::Matrix<float,2,1> Vec2f;
-    typedef Eigen::Matrix<float,6,1> Vec6f;
 
     struct CandidatePointInfo {
         uint32_t width = 32;
@@ -26,18 +19,24 @@ namespace VO {
         uint32_t distributionBlocks = 12;
     };
 
-    void findCandidatePoints(std::shared_ptr<Frame> frame, const CandidatePointInfo &info,
-                             const CameraCalibration *calibration);
+
+
+
+
+    void initializeCandidatePoints(std::shared_ptr<Frame> frame, const CandidatePointInfo &info,
+                                   const CameraCalibration *calibration,
+                                   PntResult *result);
 
     int computeHistQuantil(int* hist, float below);
 
     void makeHists(Frame* frame);
     Eigen::Vector3i
     select(Frame *frame, float *map_out, int pot, float thFactor, const std::vector<unsigned char> &randomPattern);
-    int makeMaps(Frame *frame, float *map_out, float density, int recursionsLeft, bool plot, float thFactor,
-                 const std::vector<unsigned char> &randomPattern);
 
-
+    static int makePixelStatus(Eigen::Vector3f *grads, bool *map, int w, int h, float desiredDensity, int recsLeft = 5,float THFac = 1);
+    template<int pot>
+    int gridMaxSelection(Eigen::Vector3f* grads, bool* map_out, int w, int h, float THFac);
+    //// CLASS DEFINITION
     class PointSelection{
 
     public:
