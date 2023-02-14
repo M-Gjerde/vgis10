@@ -28,7 +28,6 @@
 #include "Types.h"
 #include "Util/IndexThreadReduce.h"
 #include "Optimized/MatrixAccumulators.h"
-#include "Optimized/Energy.h"
 #include "vector"
 #include <math.h>
 
@@ -83,6 +82,7 @@ public:
 		}
 		nframes[tid]=n;
 	}
+    /*
 	void stitchDouble(MatXX &H_sc, VecX &b_sc, EnergyFunctional const * const EF, int tid=0);
 	void addPoint(EFPoint* p, bool shiftPriorToZero, int tid=0);
 
@@ -101,8 +101,7 @@ public:
 				bs[i] = VecX::Zero(nframes[0]*8+CPARS);
 			}
 
-			red->reduce(boost::bind(&AccumulatedSCHessianSSE::stitchDoubleInternal,
-				this,Hs, bs, EF,  _1, _2, _3, _4), 0, nframes[0]*nframes[0], 0);
+			//red->reduce(boost::bind(&AccumulatedSCHessianSSE::stitchDoubleInternal, this,Hs, bs, EF,  _1, _2, _3, _4), 0, nframes[0]*nframes[0], 0);
 
 			// sum up results
 			H = Hs[0];
@@ -129,7 +128,7 @@ public:
 		}
 	}
 
-
+*/
 	AccumulatorXX<8,CPARS>* accE[NUM_THREADS];
 	AccumulatorX<8>* accEB[NUM_THREADS];
 	AccumulatorXX<8,8>* accD[NUM_THREADS];
@@ -137,7 +136,7 @@ public:
 	AccumulatorX<CPARS> accbc[NUM_THREADS];
 	int nframes[NUM_THREADS];
 
-
+/*
 	void addPointsInternal(
 			std::vector<EFPoint*>* points, bool shiftPriorToZero,
 			int min=0, int max=1, Vec10* stats=0, int tid=0)
@@ -150,7 +149,9 @@ private:
 	void stitchDoubleInternal(
 			MatXX* H, VecX* b, EnergyFunctional const * const EF,
 			int min, int max, Vec10* stats, int tid);
+			*/
 };
+
 
 }
 

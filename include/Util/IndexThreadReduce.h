@@ -25,13 +25,13 @@
 
 #pragma once
 #include "boost/thread.hpp"
-#include "boost/bind.hpp"
+#include <boost/bind/bind.hpp>
 #include <stdio.h>
 #include <iostream>
 
 #define NUM_THREADS 6
 
-
+using namespace boost::placeholders;
 namespace dso
 {
 
@@ -45,7 +45,7 @@ namespace dso
             nextIndex = 0;
             maxIndex = 0;
             stepSize = 1;
-            callPerIndex = boost::bind(&IndexThreadReduce::callPerIndexDefault, this, _1, _2, _3, _4);
+            callPerIndex = boost::bind(&IndexThreadReduce::callPerIndexDefault, this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3, boost::placeholders::_4);
 
             running = true;
             for(int i=0;i<NUM_THREADS;i++)
@@ -130,7 +130,7 @@ namespace dso
 
             nextIndex = 0;
             maxIndex = 0;
-            this->callPerIndex = boost::bind(&IndexThreadReduce::callPerIndexDefault, this, _1, _2, _3, _4);
+            this->callPerIndex = boost::bind(&IndexThreadReduce::callPerIndexDefault, this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3, boost::placeholders::_4);
 
             //printf("reduce done (all threads finished)\n");
         }

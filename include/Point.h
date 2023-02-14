@@ -45,11 +45,7 @@ public:
 };
 
 struct PntResult {
-    explicit PntResult(size_t pyramidLevels){
-        pointsLevel.resize(pyramidLevels);
-        numPointsLevel.resize(pyramidLevels);
-    }
-
+    PntResult() = default;
     std::vector<std::vector<Pnt>> pointsLevel;
     std::vector<int> numPointsLevel;
 };

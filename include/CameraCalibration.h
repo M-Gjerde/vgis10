@@ -11,6 +11,7 @@
 #include <Eigen/Eigen>
 
 #include "Frame.h"
+#include "CalibHessian.h"
 
 class CameraCalibration {
 public:
@@ -42,6 +43,8 @@ public:
         // Use image dimmensions from vignette. It should match the images from the calibrated camera
         pyrLevelsUsed = setGlobalCalib(outWidth, outHeight, K);
     }
+
+
 
     void applyPhotometricCalibration(std::shared_ptr<VO::Frame> *pPtr);
     void setFramePyramidInfo(VO::Frame* frame) const;

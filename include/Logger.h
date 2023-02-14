@@ -144,7 +144,7 @@ namespace Log {
             std::size_t found = preText.find_last_of(separator);
             std::string msg = preText.substr(found + 1);
             msg.append(s);
-            msg = msg.insert(0, (std::to_string(frameNumber) + "  "));
+            msg = msg.insert(0, (std::to_string(spinNumber) + "  "));
             errorInternal(msg.c_str());
 #else
             std::string s;
@@ -174,7 +174,7 @@ namespace Log {
             std::size_t found = preText.find_last_of(separator);
             std::string msg = preText.substr(found + 1);
             msg.append(s);
-            msg = msg.insert(0, (std::to_string(frameNumber) + "  "));
+            msg = msg.insert(0, (std::to_string(spinNumber) + "  "));
             infoInternal(msg.c_str());
 #else
             std::string s;
@@ -183,7 +183,7 @@ namespace Log {
             infoInternal(s.c_str());
 #endif
         }
-        uint32_t frameNumber = 0;
+        uint32_t spinNumber = 0;
         void operator=(const Logger &obj) = delete;
         void always(std::string text) noexcept;
 

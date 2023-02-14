@@ -6,255 +6,19 @@
 #define VGIS10_TRACKERINITIALIZER_H
 
 #include <memory>
+
 #include "Frame.h"
-#include "CameraCalibration.h"
 #include "Point.h"
 #include "Optimized/MatrixAccumulators.h"
 #include "ImmaturePoint.h"
-#include "HessianBlocks.h"
 
 namespace VO {
-    Vec3f
-    calcResAndGS(int lvl, Mat88f &H_out, Vec8f &b_out, Mat88f &H_out_sc, Vec8f &b_out_sc, const SE3 &refToNew,
-                 AffLight refToNew_aff, bool plot, const std::shared_ptr<Frame> &ptr,
-                 const std::shared_ptr<Frame> &sharedPtr,
-                 Info *pInfo, PntResult *ptns);
 
-    Vec3f calcEC(int lvl, PntResult *pnts,
+    static inline Vec3f calcEC(int lvl, PntResult *pnts,
                  Info *info);
 
-    void initializeFromInitializer(const std::shared_ptr<Frame> &frame, const CameraCalibration *calibration,
-                                   PntResult *pnts,
-                                   Info *info,
-                                   const std::shared_ptr<Frame> &firstFrame) {
-        // Add first frame
 
-
-        float sumID = 1e-5, numID = 1e-5;
-        for (int i = 0; i < pnts->numPointsLevel[0]; i++) {
-            sumID += pnts->pointsLevel[0][i].iR;
-            numID++;
-        }
-
-        float rescaleFactor = 1 / (sumID / numID);
-        // Randomly subsample points
-        float keepPercentage = setting_desiredPointDensity / pnts->numPointsLevel[0];
-
-        for (int i = 0; i < pnts->numPointsLevel[0]; i++) {
-            if (rand() / (float) RAND_MAX > keepPercentage) continue;
-            Pnt *point = pnts->pointsLevel[0].data() + i;
-            ImmaturePoint pt = ImmaturePoint(point->u + 0.5f, point->v + 0.5f, point->my_type, firstFrame);
-            if (!std::isfinite(pt.energyTH)) { continue; }
-            pt.idepth_max = pt.idepth_min = 1;
-
-            PointHessian ph = PointHessian(&pt, calibration);
-
-            if (!std::isfinite(ph.energyTH)) {
-                continue;
-            }
-
-            ph.setIdepthScaled(point->iR * rescaleFactor);
-            ph.setIdepthZero(ph.idepth);
-            ph.hasDepthPrior = true;
-            ph.setPointStatus(PointHessian::ACTIVE);
-
-            firstFrame->pointHessians.push_back(ph);
-            info->ef.insertPoint(ph);
-        }
-        SE3 firstToNew = info->thisToNext;
-        firstToNew.translation() /= rescaleFactor;
-    }
-
-    bool
-    initializerTrackFrame(const std::shared_ptr<Frame> &frame, const CameraCalibration *calibration, PntResult *pnts,
-                          Info *info,
-                          const std::shared_ptr<Frame> &firstFrame) {
-        int maxIterations[] = {5, 5, 10, 30, 50};
-
-        frame->displayPyramid(0, false, "frame");
-        //firstFrame->displayPyramid(0,true, "firstFrame");
-
-        info->JbBuffer.resize(frame->width * frame->height);
-        info->JbBuffer_new.resize(frame->width * frame->height);
-        info->wM.diagonal()[0] = info->wM.diagonal()[1] = info->wM.diagonal()[2] = SCALE_XI_ROT;
-        info->wM.diagonal()[3] = info->wM.diagonal()[4] = info->wM.diagonal()[5] = SCALE_XI_TRANS;
-        info->wM.diagonal()[6] = SCALE_A;
-        info->wM.diagonal()[7] = SCALE_B;
-
-        if (!info->snapped) {
-            info->thisToNext.translation().setZero();
-            for (int lvl = 0; lvl < calibration->pyrLevelsUsed; lvl++) {
-                int npts = pnts->numPointsLevel[lvl];
-                Pnt *ptsl = pnts->pointsLevel[lvl].data();
-                for (int i = 0; i < npts; i++) {
-                    ptsl[i].iR = 1;
-                    ptsl[i].idepth_new = 1;
-                    ptsl[i].lastHessian = 0;
-                }
-            }
-        }
-
-        SE3 refToNew_current = info->thisToNext;
-        AffLight refToNew_aff_current = info->thisToNext_aff;
-
-        if (firstFrame->abExposure > 0 && frame->abExposure > 0)
-            refToNew_aff_current = AffLight(logf(frame->abExposure / firstFrame->abExposure),
-                                            0); // coarse approximation.
-
-        Vec3f latestRes = Vec3f::Zero();
-        for (int lvl = calibration->pyrLevelsUsed - 1; lvl >= 0; lvl--) {
-
-            //std::cout << refToNew_current.translation().x()<< refToNew_current.translation().y()<< refToNew_current.translation().z()<< std::endl;
-            //std::cout << refToNew_aff_current.vec() << std::endl << std::endl;
-
-            Mat88f H, Hsc;
-            Vec8f b, bsc;
-            Vec3f resOld = calcResAndGS(lvl, H, b, Hsc, bsc, refToNew_current,
-                                        refToNew_aff_current, false, firstFrame,
-                                        frame, info, pnts);
-
-            if (H.hasNaN()) {
-                std::cout << H << std::endl;
-                throw std::runtime_error("H has NAN");
-            }
-            if (b.hasNaN()) {
-                std::cout << b << std::endl;
-                throw std::runtime_error("b has NAN");
-            }
-            //std::cout << resOld << std::endl;
-            //std::cout << Hsc << std::endl;
-            //std::cout << bsc << std::endl << std::endl;
-
-            float lambda = 0.1;
-            float eps = 1e-4;
-            int fails = 0;
-
-
-            Log::Logger::getInstance()->info(
-                    "lvl {}, it {} (l={}) {}: {:.3f}+{:.5f} -> {:.3f}+{:.5f} ({:.3f}->{:.3f}) (|inc| = {})!",
-                    lvl,
-                    0,
-                    lambda,
-                    "INITIA",
-                    sqrtf((float) (resOld[0] / resOld[2])),
-                    sqrtf((float) (resOld[1] / resOld[2])),
-                    sqrtf((float) (resOld[0] / resOld[2])),
-                    sqrtf((float) (resOld[1] / resOld[2])),
-                    (resOld[0] + resOld[1]) / resOld[2],
-                    (resOld[0] + resOld[1]) / resOld[2],
-                    0.0f);
-            //std::cout << refToNew_current.log().transpose() << " AFF " << refToNew_aff_current.vec().transpose()<< "\n";
-
-
-            int iteration = 0;
-            while (true) {
-                Mat88f Hl = H;
-                for (int i = 0; i < 8; i++) Hl(i, i) *= (1 + lambda);
-                Hl -= Hsc * (1 / (1 + lambda));
-                Vec8f bl = b - bsc * (1 / (1 + lambda));
-
-                Hl = info->wM * Hl * info->wM * (0.01f / (frame->widthLevel[lvl] * frame->heightLevel[lvl]));
-                bl = info->wM * bl * (0.01f / (frame->widthLevel[lvl] * frame->heightLevel[lvl]));
-
-                Vec8f inc;
-                inc.head<6>() = -(info->wM.toDenseMatrix().topLeftCorner<6, 6>() *
-                                  (Hl.topLeftCorner<6, 6>().ldlt().solve(bl.head<6>())));
-                inc.tail<2>().setZero();
-
-                SE3 refToNew_new = SE3::exp(inc.head<6>().cast<double>()) * refToNew_current;
-                AffLight refToNew_aff_new = refToNew_aff_current;
-                refToNew_aff_new.a += inc[6];
-                refToNew_aff_new.b += inc[7];
-
-                Mat88f H_new, Hsc_new;
-                Vec8f b_new, bsc_new;
-                Vec3f resNew = calcResAndGS(lvl, H_new, b_new, Hsc_new, bsc_new, refToNew_new, refToNew_aff_new, false,
-                                            firstFrame,
-                                            frame, info, pnts);
-
-                if (H_new.hasNaN()) {
-                    std::cout << H_new << std::endl;
-                    throw std::runtime_error("H_new has NAN");
-                }
-                if (b_new.hasNaN()) {
-                    std::cout << b_new << std::endl;
-                    throw std::runtime_error("b_new has NAN");
-                }
-
-                Vec3f regEnergy = calcEC(lvl, pnts, info);
-
-                float eTotalNew = (resNew[0] + resNew[1] + regEnergy[1]);
-                float eTotalOld = (resOld[0] + resOld[1] + regEnergy[0]);
-
-                bool accept = eTotalOld > eTotalNew;
-
-                Log::Logger::getInstance()->info(
-                        "lvl {}, it {} (l={}) {}: {:.5f} + {:.5f} + {:.5f} -> {:.5f} + {:.5f} + {:.5f} ({:.2f}->{:.2f}) (|inc| = {})! \t",
-                        lvl, iteration, lambda,
-                        (accept ? "ACCEPT" : "REJECT"),
-                        sqrtf((float) (resOld[0] / resOld[2])),
-                        sqrtf((float) (regEnergy[0] / regEnergy[2])),
-                        sqrtf((float) (resOld[1] / resOld[2])),
-                        sqrtf((float) (resNew[0] / resNew[2])),
-                        sqrtf((float) (regEnergy[1] / regEnergy[2])),
-                        sqrtf((float) (resNew[1] / resNew[2])),
-                        eTotalOld / resNew[2],
-                        eTotalNew / resNew[2],
-                        inc.norm());
-                //std::cout << refToNew_new.log().transpose() << " AFF " << refToNew_aff_new.vec().transpose() << "\n";
-
-                if (accept) {
-
-                    if (resNew[1] == info->alphaK * pnts->numPointsLevel[lvl])
-                        info->snapped = true;
-                    H = H_new;
-                    b = b_new;
-                    Hsc = Hsc_new;
-                    bsc = bsc_new;
-                    resOld = resNew;
-                    refToNew_aff_current = refToNew_aff_new;
-                    refToNew_current = refToNew_new;
-                    //applyStep(lvl);
-                    //optReg(lvl);
-                    lambda *= 0.5;
-                    fails = 0;
-                    if (lambda < 0.0001) lambda = 0.0001;
-                } else {
-                    fails++;
-                    lambda *= 4;
-                    if (lambda > 10000) lambda = 10000;
-                }
-                bool quitOpt = false;
-
-                if (!(inc.norm() > eps) || iteration >= maxIterations[lvl] || fails >= 2) {
-                    Mat88f H, Hsc;
-                    Vec8f b, bsc;
-
-                    quitOpt = true;
-                }
-
-
-                if (quitOpt) break;
-                iteration++;
-            }
-            latestRes = resOld;
-        };
-
-        info->thisToNext = refToNew_current;
-        info->thisToNext_aff = refToNew_aff_current;
-
-        info->frameID++;
-        if (!info->snapped) info->snappedAtFrame = 0;
-
-        if (info->snapped && info->snappedAtFrame == 0)
-            info->snappedAtFrame = info->frameID;
-
-        Log::Logger::getInstance()->info("Snapped: {}, FrameID:  {}, snappedAtFrame {}", info->snapped, info->frameID,
-                                         info->snappedAtFrame);
-        return info->snapped && info->frameID > info->snappedAtFrame + 5;
-    }
-
-    Vec3f
+    static Vec3f
     calcResAndGS(int lvl, Mat88f &H_out, Vec8f &b_out, Mat88f &H_out_sc, Vec8f &b_out_sc, const SE3 &refToNew,
                  AffLight refToNew_aff, bool plot, const std::shared_ptr<Frame> &firstFrame,
                  const std::shared_ptr<Frame> &frame,
@@ -475,7 +239,7 @@ namespace VO {
         return Vec3f(E.A, alphaEnergy, E.num);
     }
 
-    Vec3f calcEC(int lvl, PntResult *pnts,
+    static inline Vec3f calcEC(int lvl, PntResult *pnts,
                  Info *info) {
         if (!info->snapped) return Vec3f(0, 0, pnts->numPointsLevel[lvl]);
         dso::AccumulatorX<2> E;

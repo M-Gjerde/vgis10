@@ -19,6 +19,8 @@ namespace VO {
         auto *statusMap = new float[frame->width * frame->height];
         bool *statusMapB = new bool[frame->width * frame->height];
 
+        result->pointsLevel.resize(calibration->pyrLevelsUsed);
+        result->numPointsLevel.resize(calibration->pyrLevelsUsed);
 
         for(int lvl=0; lvl<calibration->pyrLevelsUsed; lvl++)
         {
