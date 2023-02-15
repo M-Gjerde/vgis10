@@ -17,13 +17,14 @@ struct PointHessian {
     //EFPoint* efPoint;
 
     // static values
-    float color[MAX_RES_PER_POINT]{};			// colors in host frame
+    float color[MAX_RES_PER_POINT]{};			// intensity per residual in host frame
     float weights[MAX_RES_PER_POINT]{};		// host-weights for respective residuals.
 
     float u,v;
     int idx{};
     float energyTH;
     bool hasDepthPrior;
+    int pointIndex = 0;
 
     float my_type;
 
@@ -40,7 +41,7 @@ struct PointHessian {
     float maxRelBaseline;
     int numGoodResiduals;
 
-    std::vector<PointFrameResidual> residuals;					// only contains good residuals (not OOB and not OUTLIER). Arbitrary order.
+    std::vector<PointFrameResidual> residuals;					    // only contains good residuals (not OOB and not OUTLIER). Arbitrary order.
     std::pair<PointFrameResidual* , ResState> lastResiduals[2]; 	// contains information about residuals to the last two (!) frames. ([0] = latest, [1] = the one before).
 
     bool isGood() const{

@@ -11,6 +11,7 @@
 #include "AccumulatedTopHessian.h"
 #include "AccumulatedSCHessian.h"
 #include "CalibHessian.h"
+#include "EFFrame.h"
 
 class EnergyFunctional {
 public:
@@ -20,11 +21,11 @@ public:
     ~EnergyFunctional();
 
 
-    EFResidual* insertResidual(PointFrameResidual* r);
-    EFFrame* insertFrame(std::shared_ptr<VO::Frame> fh, CalibHessian* Hcalib);
-    EFPoint* insertPoint(PointHessian* ph);
+    void insertResidual(PointFrameResidual *r, int hostFrameID, int targetFrameID);
+    void insertFrame(std::shared_ptr<VO::Frame> fh, CalibHessian* Hcalib);
+    void insertPoint(PointHessian *ph, uint32_t i);
 
-    void dropResidual(EFResidual* r);
+    void dropResidual(PointFrameResidual* r);
     void marginalizeFrame(EFFrame* fh);
     void removePoint(EFPoint* ph);
 
@@ -43,7 +44,8 @@ public:
 
     void setAdjointsF(CalibHessian* Hcalib);
 
-    std::vector<EFFrame*> frames;
+    std::vector<EFFrame> eFrames;
+
     int nPoints, nFrames, nResiduals;
 
     MatXX HM;

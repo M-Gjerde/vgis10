@@ -6,6 +6,7 @@
 #define VGIS10_ENUMS_H
 
 enum ResLocation {ACTIVE=0, LINEARIZED, MARGINALIZED, NONE};
+enum EFPointStatus {PS_GOOD=0, PS_MARGINALIZE, PS_DROP};
 
 enum ResState {IN=0, OOB, OUTLIER};
 

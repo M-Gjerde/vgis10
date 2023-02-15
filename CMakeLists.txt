@@ -21,23 +21,29 @@ set(SRC_FILES
         src/CameraCalibration.cpp
         src/PointSelection.cpp
         src/Tracker.cpp
+        src/Optimized/AccumulatedSCHessian.cpp
+        src/Optimized/AccumulatedTopHessian.cpp
+        src/Optimized/Energy.cpp
+
         include/TrackerInitializer.h
         include/ImmaturePoint.h
         include/CalibHessian.h
-        src/Optimized/AccumulatedSCHessian.cpp
-        src/Optimized/AccumulatedTopHessian.cpp
         include/Util/IndexThreadReduce.h
         include/PointHessian.h
-        src/Optimized/Energy.cpp
         include/Optimized/PointFrameResidual.h
         include/Optimized/EFResidual.h
         include/Optimized/EFPoint.h
         include/Optimized/EFPoint.h
         include/Optimized/EFFrame.h
-        include/Optimized/EFFrame.h include/CoarseDistanceMap.h include/ImmaturePointTemporaryResidual.h include/Util/Enums.h include/Optimized/Linearize.h)
+        include/Optimized/EFFrame.h
+        include/CoarseDistanceMap.h
+        include/ImmaturePointTemporaryResidual.h
+        include/Util/Enums.h
+        include/Util/Linearize.h
+        src/TrackerOptimize.cpp)
 
 add_executable(vgis10 ${SRC_FILES})
-target_link_libraries(vgis10 fmt::fmt ${OpenCV_LIBS} Eigen3::Eigen sophus yaml-cpp::yaml-cpp)
+target_link_libraries(vgis10 fmt::fmt ${OpenCV_LIBS} Eigen3::Eigen sophus yaml-cpp::yaml-cpp -lboost_thread)
 
 add_custom_command(TARGET vgis10
         POST_BUILD

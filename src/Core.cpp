@@ -35,7 +35,7 @@ namespace VO {
             }
 
             m_Tracker->initializeFromInitializer();
-            m_IsRunning = false;
+            m_IsRunning = true;
             m_Tracker->takeTrackedFrame(m_Tracker->secondFrame, true);
         }
 

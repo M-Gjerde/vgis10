@@ -135,12 +135,12 @@ namespace dso
             //printf("reduce done (all threads finished)\n");
         }
 
-        Running stats;
+        Running stats{};
 
     private:
         boost::thread workerThreads[NUM_THREADS];
-        bool isDone[NUM_THREADS];
-        bool gotOne[NUM_THREADS];
+        bool isDone[NUM_THREADS]{};
+        bool gotOne[NUM_THREADS]{};
 
         boost::mutex exMutex;
         boost::condition_variable todo_signal;

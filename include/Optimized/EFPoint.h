@@ -6,23 +6,26 @@
 #define VGIS10_EFPOINT_H
 
 #include "PointHessian.h"
+#include "Util/Enums.h"
+#include "Settings.h"
+#include "EFResidual.h"
 
-enum EFPointStatus {PS_GOOD=0, PS_MARGINALIZE, PS_DROP};
-
-
-class EFPoint {
+class EFPoint
+{
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
-    EFPoint(PointHessian* d) : data(d)
+    EFPoint(PointHessian* ph)
     {
-        takeData();
+        priorF = ph->hasDepthPrior ? setting_idepthFixPrior*SCALE_IDEPTH*SCALE_IDEPTH : 0;
+        if(setting_solverMode & SOLVER_REMOVE_POSEPRIOR) priorF=0;
+
+        deltaF = ph->idepth - ph->idepth_zero;
         stateFlag=EFPointStatus::PS_GOOD;
+        data = ph;
     }
-    void takeData();
 
+    std::vector<EFResidual> residualsAll;
     PointHessian* data;
-
-
 
     float priorF;
     float deltaF;
@@ -30,8 +33,6 @@ public:
 
     // constant info (never changes in-between).
     int idxInPoints;
-
-    // contains all residuals.
 
     float bdSumF;
     float HdiF;
@@ -45,6 +46,5 @@ public:
 
     EFPointStatus stateFlag;
 };
-
 
 #endif //VGIS10_EFPOINT_H

@@ -106,6 +106,9 @@ namespace VO {
         std::vector<PointHessian> pointHessiansMarginalized;   	// contains all MARGINALIZED points (= fully marginalized, usually because point went OOB.)
         std::vector<PointHessian> pointHessiansOut;		        // contains all OUTLIER points (= discarded.).
 
+        // EnergyStuff
+        float frameEnergyTH = 0;
+
         // Calibration stuff (global)
         int widthLevel[PYR_LEVELS]{}, heightLevel[PYR_LEVELS]{};
         float fxLevel[PYR_LEVELS]{}, fyLevel[PYR_LEVELS]{}, cxLevel[PYR_LEVELS]{}, cyLevel[PYR_LEVELS]{};

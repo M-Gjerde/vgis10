@@ -10,7 +10,7 @@
 #include "CalibHessian.h"
 #include "Util/Enums.h"
 #include "CameraCalibration.h"
-#include "Optimized/Linearize.h"
+#include "Util/Linearize.h"
 
 
 struct ImmaturePoint {

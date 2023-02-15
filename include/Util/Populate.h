@@ -9,8 +9,28 @@
 #include "CameraCalibration.h"
 #include "PointHessian.h"
 #include "ImmaturePoint.h"
+#include "Enums.h"
 
 namespace VO {
+    static void applyResidual(bool copyJacobians, EFResidual* efResidual, PointFrameResidual* res){
+        if (copyJacobians) {
+            if(res->state_state == ResState::OOB){
+                assert(!efResidual->isActiveAndIsGoodNEW);
+                return;    // can never go back from OOB
+            }
+            if (res->state_NewState == ResState::IN)// && )
+            {
+                efResidual->isActiveAndIsGoodNEW=true;
+                efResidual->takeDataF(res->J);
+            } else {
+                efResidual->isActiveAndIsGoodNEW=false;
+            }
+        }
+
+        res->setState(res->state_NewState);
+        res->state_energy = res->state_NewEnergy;
+    }
+
     static void pointHessianFromImmaturePoint(const ImmaturePoint * rawPoint, PointHessian* ph){
         ph->hasDepthPrior=false;
         ph->idepth_hessian=0;

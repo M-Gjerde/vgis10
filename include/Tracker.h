@@ -63,6 +63,9 @@ public:
         //energyFunctional = std::make_unique<EnergyFunctional>();
         immaturePoints.resize(2);
         VO::initCalibHessian(&hCalib, calib);
+
+        ef.red = &this->treadReduce;
+
     }
     // Keep first two frames in memory
     std::shared_ptr<VO::Frame> firstFrame;
@@ -75,16 +78,20 @@ public:
     // All tracking math
     //std::unique_ptr<EnergyFunctional> energyFunctional;
     std::vector<std::shared_ptr<VO::Frame>> frameHessians;
+    std::vector<PointFrameResidual*> activeResiduals{};
+
     std::vector<FrameToFramePrecalc> frameToFramePreCalc;
 
     std::vector<std::vector<ImmaturePoint>> immaturePoints;     // contains all OUTLIER points (= discarded.).
+    EnergyFunctional ef;
+    dso::IndexThreadReduce<Vec10> treadReduce;
 
     PntResult points;
     bool initialized = false;
     Info info;
     float currentMinActDist = 2;
+    std::vector<float> allResVec;
 
-    EnergyFunctional ef;
 
     bool initializerTrackFrame(const std::shared_ptr<VO::Frame> &frame, const CameraCalibration *calibration);
 
@@ -110,6 +117,15 @@ private:
 
     void optimizeImmaturePoint(ImmaturePoint *point, int minObs, ImmaturePointTemporaryResidual *residuals,
                                PointHessian *phOut);
+
+    float optimize(int mnumOptIts);
+
+    Vec3 linearizeAll(bool fixLinearization);
+
+    void linearizeAll_Reductor(bool fixLinearization, std::vector<PointFrameResidual*> *toRemove, int min, int max,
+                               Vec10 *stats, int tid);
+
+    void setNewFrameEnergyTH();
 };
 
 
