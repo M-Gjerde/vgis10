@@ -39,7 +39,7 @@ namespace VO {
         std::vector<std::filesystem::path> m_FileNames{};
         uint32_t m_datasetImagesCount = 0;
 
-        uint32_t m_FrameID = 0;
+        uint32_t m_FrameID = 10;
         Frame *m_CurrentFrame{};
         Frame *m_PreviousFrame{};
 

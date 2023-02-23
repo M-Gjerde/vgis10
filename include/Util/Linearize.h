@@ -90,7 +90,7 @@ static double linearize(PointHessian* point, CalibHessian* HCalib, PointFrameRes
         float Ku, Kv;
         Vec3f KliP;
 
-        if(!projectPoint(point->u, point->v, point->idepth_zero_scaled, 0, 0,HCalib,
+        if(!projectPoint(point->u, point->v, point->idepth_zero_scaled, 0, 0, HCalib,
                          PRE_RTll_0,PRE_tTll_0, drescale, u, v, Ku, Kv, KliP, new_idepth, host->width-3, host->height - 3))
         { pointRes->state_NewState = ResState::OOB; return pointRes->state_energy; }
 

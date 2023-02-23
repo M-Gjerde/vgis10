@@ -394,7 +394,7 @@ void Tracker::setNewFrameEnergyTH() {
     newFrame->frameEnergyTH = newFrame->frameEnergyTH*newFrame->frameEnergyTH;
     newFrame->frameEnergyTH *= setting_overallEnergyTHWeight*setting_overallEnergyTHWeight;
 
-    Log::Logger::getInstance()->info("nthIndex and nthElement {}, {}, new frame threshold", nthIdx, nthElement, newFrame->frameEnergyTH);
+    Log::Logger::getInstance()->info("nthIndex and nthElement {}, {}, new frame threshold: {}", nthIdx, nthElement, newFrame->frameEnergyTH);
 }
 
 Vec3 Tracker::linearizeAll(bool fixLinearization) {
