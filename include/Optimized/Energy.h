@@ -13,6 +13,10 @@
 #include "CalibHessian.h"
 #include "EFFrame.h"
 
+extern bool EFAdjointsValid;
+extern bool EFIndicesValid;
+extern bool EFDeltaValid;
+
 class EnergyFunctional {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
@@ -70,6 +74,17 @@ public:
     Eigen::aligned_allocator<std::pair<const uint64_t, Eigen::Vector2i>>
     > connectivityMap;
 
+    Mat88* adHost;
+    Mat88* adTarget;
+
+    Mat88f* adHostF;
+    Mat88f* adTargetF;
+    Mat18f* adHTdeltaF;
+
+    VecC cPrior;
+    VecCf cDeltaF;
+    VecCf cPriorF;
+    std::vector<EFPoint*> allPoints;
 private:
 
     VecX getStitchedDeltaF() const;
@@ -84,18 +99,6 @@ private:
     void calcLEnergyPt(int min, int max, Vec10* stats, int tid);
 
     void orthogonalize(VecX* b, MatXX* H);
-    Mat18f* adHTdeltaF;
-
-    Mat88* adHost;
-    Mat88* adTarget;
-
-    Mat88f* adHostF;
-    Mat88f* adTargetF;
-
-
-    VecC cPrior;
-    VecCf cDeltaF;
-    VecCf cPriorF;
 
     dso::AccumulatedTopHessianSSE* accSSE_top_L;
     dso::AccumulatedTopHessianSSE* accSSE_top_A;
@@ -103,7 +106,6 @@ private:
 
     dso::AccumulatedSCHessianSSE* accSSE_bot;
 
-    std::vector<EFPoint*> allPoints;
     std::vector<EFPoint*> allPointsToMarg;
 
     float currentLambda;

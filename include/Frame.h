@@ -37,11 +37,15 @@ namespace VO {
 
         float distanceLL{};
 
+        int hostTrackingID = 0;
+        int targetTrackingID = 0;
 
-        inline ~FrameToFramePrecalc() = default;
-        inline FrameToFramePrecalc() = default;
-        void set(const VO::FramePose& host, const VO::FramePose& target, float fxl , float fyl, float cyl, float cxl){
+        ~FrameToFramePrecalc() = default;
+        FrameToFramePrecalc() = default;
+        void set(const VO::FramePose& host, const VO::FramePose& target, float fxl , float fyl, float cyl, float cxl, int hostTrackID, int targetTrackID){
 
+            hostTrackingID = hostTrackID;
+            targetTrackingID = targetTrackID;
 
             SE3 leftToLeft_0 = target.get_worldToCam_evalPT() * host.get_worldToCam_evalPT().inverse();
             PRE_RTll_0 = (leftToLeft_0.rotationMatrix()).cast<float>();
@@ -70,11 +74,11 @@ namespace VO {
 
     struct Frame {
         Frame() {
-            //Log::Logger::getInstance()->info("Created Frame Object");
+            Log::Logger::getInstance()->info("Created Frame Object {}", static_cast<void*>(this));
         }
 
         ~Frame() {
-            //Log::Logger::getInstance()->info("Destroyed Frame Object");
+            Log::Logger::getInstance()->info("Destroyed Frame Object: {}", static_cast<void*>(this));
         }
 
         int width = 0, inWidth = 0;
@@ -96,18 +100,18 @@ namespace VO {
         std::vector<int> gradientHistogram{};
         int histStep = 0;
 
-        // Pose stuff
-        FramePose pose;
-        FramePose trackingRef;
-        std::vector<FrameToFramePrecalc> targetPrecalc;
-
         // Points stuff
         std::vector<PointHessian> pointHessians;                // contains all ACTIVE points.
         std::vector<PointHessian> pointHessiansMarginalized;   	// contains all MARGINALIZED points (= fully marginalized, usually because point went OOB.)
         std::vector<PointHessian> pointHessiansOut;		        // contains all OUTLIER points (= discarded.).
 
         // EnergyStuff
-        float frameEnergyTH = 0;
+        float frameEnergyTH = 8*8*patternNum;
+
+        // Pose stuff
+        FramePose pose;
+        FramePose trackingRef;
+        std::vector<FrameToFramePrecalc,Eigen::aligned_allocator<FrameToFramePrecalc>> targetPrecalc;
 
         // Calibration stuff (global)
         int widthLevel[PYR_LEVELS]{}, heightLevel[PYR_LEVELS]{};

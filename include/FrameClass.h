@@ -22,8 +22,12 @@ namespace VO {
             std::sort(filesInDirectory.begin(), filesInDirectory.end());
             m_FileNames = filesInDirectory;
             m_datasetImagesCount = m_FileNames.size();
-        }
 
+            // Load frame times from timex.txt
+            std::filesystem::path exposureTimePath = (m_FolderPath.parent_path().append("times.txt"));
+            infile = std::ifstream(exposureTimePath.c_str());
+        }
+        std::ifstream infile;
         void setDataSource() {
 
         }

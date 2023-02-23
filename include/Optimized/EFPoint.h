@@ -17,7 +17,6 @@ public:
     EFPoint(PointHessian* ph)
     {
         priorF = ph->hasDepthPrior ? setting_idepthFixPrior*SCALE_IDEPTH*SCALE_IDEPTH : 0;
-        if(setting_solverMode & SOLVER_REMOVE_POSEPRIOR) priorF=0;
 
         deltaF = ph->idepth - ph->idepth_zero;
         stateFlag=EFPointStatus::PS_GOOD;
@@ -32,16 +31,16 @@ public:
 
 
     // constant info (never changes in-between).
-    int idxInPoints;
+    int idxInPoints{};
 
-    float bdSumF;
-    float HdiF;
-    float Hdd_accLF;
+    float bdSumF{};
+    float HdiF{};
+    float Hdd_accLF{};
     VecCf Hcd_accLF;
-    float bd_accLF;
-    float Hdd_accAF;
+    float bd_accLF{};
+    float Hdd_accAF{};
     VecCf Hcd_accAF;
-    float bd_accAF;
+    float bd_accAF{};
 
 
     EFPointStatus stateFlag;

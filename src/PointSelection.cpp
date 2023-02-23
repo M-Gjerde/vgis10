@@ -36,11 +36,11 @@ namespace VO {
                 npts = sel.makeMaps(frame.get(), statusMap, densities[lvl] * frame->width * frame->height, 1, false,
                                     2);
             else
-                npts = makePixelStatus(frame->pyramidNoPhotometric[lvl].data(), statusMapB, frame->widthLevel[lvl], frame->heightLevel[lvl],
+                npts = makePixelStatus(frame->pyramid[lvl].data(), statusMapB, frame->widthLevel[lvl], frame->heightLevel[lvl],
                                        densities[lvl] * frame->width * frame->height);
 
             result->pointsLevel[lvl].resize(npts);
-
+            Log::Logger::getInstance()->info("Npts: {}", npts);
             // set idepth map to initially 1 everywhere.
             int wl = frame->widthLevel[lvl], hl = frame->heightLevel[lvl];
             Pnt *pl = result->pointsLevel[lvl].data();
@@ -276,7 +276,7 @@ namespace VO {
     Eigen::Vector3i
     select(Frame *frame, float *map_out, int pot, float thFactor, const std::vector<unsigned char> &randomPattern) {
 
-        Eigen::Vector3f const *const map0 = frame->pyramidNoPhotometric[0].data();
+        Eigen::Vector3f const *const map0 = frame->pyramid[0].data();
 
         float *mapmax0 = frame->absSquaredGrad[0].data();
         float *mapmax1 = frame->absSquaredGrad[1].data();
@@ -361,7 +361,6 @@ namespace VO {
                                         if (ag0 > pixelTH0 * thFactor) {
                                             Vec2f ag0d = map0[idx].tail<2>();
                                             float dirNorm = fabsf((float) (ag0d.dot(dir2)));
-                                            if (!setting_selectDirectionDistribution) dirNorm = ag0;
 
                                             if (dirNorm > bestVal2) {
                                                 bestVal2 = dirNorm;
@@ -376,7 +375,6 @@ namespace VO {
                                         if (ag1 > pixelTH1 * thFactor) {
                                             Vec2f ag0d = map0[idx].tail<2>();
                                             float dirNorm = fabsf((float) (ag0d.dot(dir3)));
-                                            if (!setting_selectDirectionDistribution) dirNorm = ag1;
 
                                             if (dirNorm > bestVal3) {
                                                 bestVal3 = dirNorm;
@@ -391,7 +389,6 @@ namespace VO {
                                         if (ag2 > pixelTH2 * thFactor) {
                                             Vec2f ag0d = map0[idx].tail<2>();
                                             float dirNorm = fabsf((float) (ag0d.dot(dir4)));
-                                            if (!setting_selectDirectionDistribution) dirNorm = ag2;
 
                                             if (dirNorm > bestVal4) {
                                                 bestVal4 = dirNorm;

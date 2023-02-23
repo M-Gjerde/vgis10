@@ -10,9 +10,7 @@ namespace VO {
 
         SE3 frameToWorld;
         SE3 frameToTrackingRef;
-        int trackingRefFrameID = 0;
         AffLight affLightg2l{};
-        float frameEnergyTH = 8 * 8 * patternNum; // set dynamically depending on tracking residual
         uint32_t trackingID = 0;
         float abExposure = 1;
         Mat66 nullspaces_pose;
@@ -23,6 +21,10 @@ namespace VO {
         Vec10 state_zero;
         Vec10 state_scaled;
         Vec10 state;    // [0-5: worldToCam-leftEps. 6-7: a,b]
+        Vec10 step;
+
+        Vec10 step_backup;
+        Vec10 state_backup;
 
         EIGEN_STRONG_INLINE const SE3 &get_worldToCam_evalPT() const { return worldToCam_evalPT; }
 
@@ -123,30 +125,19 @@ namespace VO {
             setStateZero(this->get_state());
         };
 
-        inline Vec10 getPrior() {
+        Vec10 getPrior() const {
             Vec10 p = Vec10::Zero();
-            // TODO set InitialTransPrior
-            /*
-            if(id==0)
+            if(trackingID==0)
             {
                 p.head<3>() = Vec3::Constant(setting_initialTransPrior);
                 p.segment<3>(3) = Vec3::Constant(setting_initialRotPrior);
-                if(setting_solverMode & SOLVER_REMOVE_POSEPRIOR) p.head<6>().setZero();
 
                 p[6] = setting_initialAffAPrior;
                 p[7] = setting_initialAffBPrior;
             }
             else
-             */
             {
-                if (setting_affineOptModeA < 0)
-                    p[6] = setting_initialAffAPrior;
-                else
                     p[6] = setting_affineOptModeA;
-
-                if (setting_affineOptModeB < 0)
-                    p[7] = setting_initialAffBPrior;
-                else
                     p[7] = setting_affineOptModeB;
             }
             p[8] = setting_initialAffAPrior;
@@ -154,7 +145,7 @@ namespace VO {
             return p;
         }
 
-        inline Vec10 getPriorZero() {
+        static inline Vec10 getPriorZero() {
             return Vec10::Zero();
         }
 

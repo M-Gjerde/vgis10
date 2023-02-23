@@ -21,7 +21,7 @@ public:
     }
 
     inline ~EFResidual() {
-        delete J;
+        //delete J;
     }
 
     void takeDataF(RawResidualJacobian *JHost) {
@@ -36,6 +36,7 @@ public:
     }
 
     // structural pointers
+    PointFrameResidual* pfr;
     int hostIDX, targetIDX;
     int idxInAll;
     RawResidualJacobian *J;
@@ -47,7 +48,7 @@ public:
     // if residual is not OOB & not OUTLIER & should be used during accumulations
     bool isActiveAndIsGoodNEW;
 
-    inline const bool &isActive() const { return isActiveAndIsGoodNEW; }
+    const bool &isActive() const { return isActiveAndIsGoodNEW; }
 
     void applyRes(bool copyJacobians) {
 

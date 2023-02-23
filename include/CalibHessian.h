@@ -26,8 +26,17 @@ struct CalibHessian
 
     ~CalibHessian() = default;
 
-    explicit CalibHessian() = default;
-    float wM3G, hM3G;
+    explicit CalibHessian(float fxG, float fyG, float cxG, float cyG){
+        VecC initial_value = VecC::Zero();
+        initial_value[0] = fxG;
+        initial_value[1] = fyG;
+        initial_value[2] = cxG;
+        initial_value[3] = cyG;
+
+        setValueScaled(initial_value);
+        value_zero = value;
+        value_minus_value_zero.setZero();
+    }
 
     // normal mode: use the optimized parameters everywhere!
     inline float& fxl() {return value_scaledf[0];}

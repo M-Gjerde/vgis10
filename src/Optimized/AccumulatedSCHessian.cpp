@@ -2,53 +2,56 @@
 #include "Optimized/AccumulatedSCHessian.h"
 #include "CalibHessian.h"
 
+#include "Optimized/EFPoint.h"
+#include "Optimized/Energy.h"
+
 namespace dso
 {
-/*
-void AccumulatedSCHessianSSE::addPoint(EFPoint* p, bool shiftPriorToZero, int tid)
-{
-	int ngoodres = 0;
-	for(EFResidual* r : p->residualsAll) if(r->isActive()) ngoodres++;
-	if(ngoodres==0)
-	{
-		p->HdiF=0;
-		p->bdSumF=0;
-		p->data->idepth_hessian=0;
-		p->data->maxRelBaseline=0;
-		return;
-	}
 
-	float H = p->Hdd_accAF+p->Hdd_accLF+p->priorF;
-	if(H < 1e-10) H = 1e-10;
+    void AccumulatedSCHessianSSE::addPoint(EFPoint* p, bool shiftPriorToZero, int tid)
+    {
+        int ngoodres = 0;
+        for(EFResidual r : p->residualsAll) if(r.isActive()) ngoodres++;
+        if(ngoodres==0)
+        {
+            p->HdiF=0;
+            p->bdSumF=0;
+            p->data->idepth_hessian=0;
+            p->data->maxRelBaseline=0;
+            return;
+        }
 
-	p->data->idepth_hessian=H;
+        float H = p->Hdd_accAF+p->Hdd_accLF+p->priorF;
+        if(H < 1e-10) H = 1e-10;
 
-	p->HdiF = 1.0 / H;
-	p->bdSumF = p->bd_accAF + p->bd_accLF;
-	if(shiftPriorToZero) p->bdSumF += p->priorF*p->deltaF;
-	VecCf Hcd = p->Hcd_accAF + p->Hcd_accLF;
-	accHcc[tid].update(Hcd,Hcd,p->HdiF);
-	accbc[tid].update(Hcd, p->bdSumF * p->HdiF);
+        p->data->idepth_hessian=H;
 
-	assert(std::isfinite((float)(p->HdiF)));
+        p->HdiF = 1.0 / H;
+        p->bdSumF = p->bd_accAF + p->bd_accLF;
+        if(shiftPriorToZero) p->bdSumF += p->priorF*p->deltaF;
+        VecCf Hcd = p->Hcd_accAF + p->Hcd_accLF;
+        accHcc[tid].update(Hcd,Hcd,p->HdiF);
+        accbc[tid].update(Hcd, p->bdSumF * p->HdiF);
 
-	int nFrames2 = nframes[tid]*nframes[tid];
-	for(EFResidual* r1 : p->residualsAll)
-	{
-		if(!r1->isActive()) continue;
-		int r1ht = r1->hostIDX + r1->targetIDX*nframes[tid];
+        assert(std::isfinite((float)(p->HdiF)));
 
-		for(EFResidual* r2 : p->residualsAll)
-		{
-			if(!r2->isActive()) continue;
+        int nFrames2 = nframes[tid]*nframes[tid];
+        for(EFResidual r1 : p->residualsAll)
+        {
+            if(!r1.isActive()) continue;
+            int r1ht = r1.hostIDX + r1.targetIDX*nframes[tid];
 
-			accD[tid][r1ht+r2->targetIDX*nFrames2].update(r1->JpJdF, r2->JpJdF, p->HdiF);
-		}
+            for(EFResidual r2 : p->residualsAll)
+            {
+                if(!r2.isActive()) continue;
 
-		accE[tid][r1ht].update(r1->JpJdF, Hcd, p->HdiF);
-		accEB[tid][r1ht].update(r1->JpJdF,p->HdiF*p->bdSumF);
-	}
-}
+                accD[tid][r1ht+r2.targetIDX*nFrames2].update(r1.JpJdF, r2.JpJdF, p->HdiF);
+            }
+
+            accE[tid][r1ht].update(r1.JpJdF, Hcd, p->HdiF);
+            accEB[tid][r1ht].update(r1.JpJdF,p->HdiF*p->bdSumF);
+        }
+    }
 void AccumulatedSCHessianSSE::stitchDoubleInternal(
 		MatXX* H, VecX* b, EnergyFunctional const * const EF,
 		int min, int max, Vec10* stats, int tid)
@@ -191,5 +194,5 @@ void AccumulatedSCHessianSSE::stitchDouble(MatXX &H, VecX &b, EnergyFunctional c
 		H.block<CPARS,8>(0,hIdx).noalias() = H.block<8,CPARS>(hIdx,0).transpose();
 	}
 }
-*/
+
 }

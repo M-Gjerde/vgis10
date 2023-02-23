@@ -17,30 +17,17 @@ float Tracker::optimize(int mnumOptIts) {
     activeResiduals.clear();
     int numPoints = 0;
     int numLRes = 0;
-    int idx = 0;
-
-    for (auto &frameHessian: frameHessians) {
-        auto *fh = frameHessian.get();
-
-        for (auto &pointHessian: fh->pointHessians) {
-            auto *ph = &pointHessian;
-
-            for (int i = 0; i < ph->residuals.size(); ++i) {
-                auto *r = &ph->residuals[i];
-
-                for (int m = 0; m < ef.eFrames[fh->trackingID].points[ph->pointIndex].residualsAll.size(); ++m) {
-                    auto *res = &ef.eFrames[fh->trackingID].points[ph->pointIndex].residualsAll[m];
-                    if (ph->pointIndex == r->pointIndex && !res->isLinearized) {
-                        activeResiduals.push_back(r);
-                    } else
-                        numLRes++;
-                }
-
+    for (auto &fh: frameHessians)
+        for (PointHessian &ph: fh->pointHessians) {
+            for (PointFrameResidual &r: ph.residuals) {
+                if (!r.efResidual->isLinearized) {
+                    activeResiduals.push_back(&r);
+                    r.resetOOB();
+                } else
+                    numLRes++;
             }
-
+            numPoints++;
         }
-        numPoints++;
-    }
 
 
     Log::Logger::getInstance()->info("OPTIMIZE {} pts, {} active res, {} lin res!", ef.nPoints,
@@ -52,169 +39,301 @@ float Tracker::optimize(int mnumOptIts) {
     double lastEnergyL = ef.calcLEnergyF_MT();
     double lastEnergyM = ef.calcMEnergyF();
     Log::Logger::getInstance()->info("Last Energy L: {} and M: {}", lastEnergyL, lastEnergyM);
-/*
 
-applyRes_Reductor(true,0,activeResiduals.size(),0,0);
-
-
-if(!setting_debugout_runquiet)
-{
-    printf("Initial Error       \t");
-    printOptRes(lastEnergy, lastEnergyL, lastEnergyM, 0, 0, frameHessians.back()->aff_g2l().a, frameHessians.back()->aff_g2l().b);
-}
-
-debugPlotTracking();
-
-
-
-double lambda = 1e-1;
-float stepsize=1;
-VecX previousX = VecX::Constant(CPARS+ 8*frameHessians.size(), NAN);
-for(int iteration=0;iteration<mnumOptIts;iteration++)
-{
-    // solve!
-    backupState(iteration!=0);
-    //solveSystemNew(0);
-    solveSystem(iteration, lambda);
-    double incDirChange = (1e-20 + previousX.dot(ef->lastX)) / (1e-20 + previousX.norm() * ef->lastX.norm());
-    previousX = ef->lastX;
-
-
-    if(std::isfinite(incDirChange) && (setting_solverMode & SOLVER_STEPMOMENTUM))
-    {
-        float newStepsize = exp(incDirChange*1.4);
-        if(incDirChange<0 && stepsize>1) stepsize=1;
-
-        stepsize = sqrtf(sqrtf(newStepsize*stepsize*stepsize*stepsize));
-        if(stepsize > 2) stepsize=2;
-        if(stepsize <0.25) stepsize=0.25;
+    for (int k = 0; k < activeResiduals.size(); k++) {
+        VO::applyResidual(true, activeResiduals[k]->efResidual, activeResiduals[k]);
     }
+    Log::Logger::getInstance()->info("INITIAL ERROR \t A({})=(AV {:.3f}). Num: A({}) + M({}); ab {} {}! ",
+                                     lastEnergy[0],
+                                     sqrtf((float) (lastEnergy[0] / (patternNum * ef.resInA))),
+                                     ef.resInA,
+                                     ef.resInM,
+                                     frameHessians.back()->pose.aff_g2l().a,
+                                     frameHessians.back()->pose.aff_g2l().b);
 
-    bool canbreak = doStepFromBackup(stepsize,stepsize,stepsize,stepsize,stepsize);
+    double lambda = 1e-1;
+    float stepsize = 1;
+    VecX previousX = VecX::Constant(CPARS + 8 * frameHessians.size(), NAN);
+    for (int iteration = 0; iteration < mnumOptIts; iteration++) {
+        // solve!
+
+        backupState(iteration != 0);
+        //solveSystemNew(0);
+        solveSystem(iteration, lambda);
+        double incDirChange = (1e-20 + previousX.dot(ef.lastX)) / (1e-20 + previousX.norm() * ef.lastX.norm());
+        previousX = ef.lastX;
+
+        bool canbreak = doStepFromBackup(stepsize, stepsize, stepsize, stepsize, stepsize);
+
+        // eval new energy!
+        Vec3 newEnergy = linearizeAll(false);
+        double newEnergyL = ef.calcLEnergyF_MT();
+        double newEnergyM = ef.calcMEnergyF();
 
 
+        Log::Logger::getInstance()->info("{} {}. OldEnergy: {} {} {}, NewEnergy {} {} {} \t (L {:.2f}, dir {:.2f}, ss {:.1f}): \t",
+                                         (newEnergy[0] + newEnergy[1] + newEnergyL + newEnergyM <
+                                          lastEnergy[0] + lastEnergy[1] + lastEnergyL + lastEnergyM) ? "ACCEPT"
+                                                                                                     : "REJECT",
+                                         iteration,
+                                         lastEnergy[0],
+                                         lastEnergyL,
+                                         lastEnergyM,
+                                         newEnergy[0],
+                                         newEnergyL,
+                                         newEnergyM,
+                                         log10(lambda),
+                                         incDirChange,
+                                         stepsize);
+
+        Log::Logger::getInstance()->info("A({})=(AV {:.3f}). Num: A({}) + M({}); ab {} {}! ",
+                                         newEnergy[0],
+                                         sqrtf((float) (newEnergy[0] / (patternNum * ef.resInA))),
+                                         ef.resInA,
+                                         ef.resInM,
+                                         frameHessians.back()->pose.aff_g2l().a,
+                                         frameHessians.back()->pose.aff_g2l().b);
+
+        if (setting_forceAceptStep || (newEnergy[0] + newEnergy[1] + newEnergyL + newEnergyM <
+                                       lastEnergy[0] + lastEnergy[1] + lastEnergyL + lastEnergyM)) {
 
 
+            for (int k = 0; k < activeResiduals.size(); k++) {
+                VO::applyResidual(true, activeResiduals[k]->efResidual, activeResiduals[k]);
+            }
+
+            lastEnergy = newEnergy;
+            lastEnergyL = newEnergyL;
+            lastEnergyM = newEnergyM;
+
+            lambda *= 0.25;
+        } else {
+            loadSateBackup();
+            lastEnergy = linearizeAll(false);
+            lastEnergyL = ef.calcLEnergyF_MT();
+            lastEnergyM = ef.calcMEnergyF();
+            lambda *= 1e2;
+        }
 
 
-
-    // eval new energy!
-    Vec3 newEnergy = linearizeAll(false);
-    double newEnergyL = calcLEnergy();
-    double newEnergyM = calcMEnergy();
-
-
-
-
-    if(!setting_debugout_runquiet)
-    {
-        printf("%s %d (L %.2f, dir %.2f, ss %.1f): \t",
-               (newEnergy[0] +  newEnergy[1] +  newEnergyL + newEnergyM <
-                lastEnergy[0] + lastEnergy[1] + lastEnergyL + lastEnergyM) ? "ACCEPT" : "REJECT",
-               iteration,
-               log10(lambda),
-               incDirChange,
-               stepsize);
-        printOptRes(newEnergy, newEnergyL, newEnergyM , 0, 0, frameHessians.back()->aff_g2l().a, frameHessians.back()->aff_g2l().b);
-    }
-
-    if(setting_forceAceptStep || (newEnergy[0] +  newEnergy[1] +  newEnergyL + newEnergyM <
-                                  lastEnergy[0] + lastEnergy[1] + lastEnergyL + lastEnergyM))
-    {
-
-        if(multiThreading)
-            treadReduce.reduce(boost::bind(&FullSystem::applyRes_Reductor, this, true, _1, _2, _3, _4), 0, activeResiduals.size(), 50);
-        else
-            applyRes_Reductor(true,0,activeResiduals.size(),0,0);
-
-        lastEnergy = newEnergy;
-        lastEnergyL = newEnergyL;
-        lastEnergyM = newEnergyM;
-
-        lambda *= 0.25;
-    }
-    else
-    {
-        loadSateBackup();
-        lastEnergy = linearizeAll(false);
-        lastEnergyL = calcLEnergy();
-        lastEnergyM = calcMEnergy();
-        lambda *= 1e2;
+        if (canbreak && iteration >= setting_minOptIterations) {
+            Log::Logger::getInstance()->info("Breaking GN optimization. Itration: {}, canBreak: {}", iteration, canbreak);
+            break;
+        }
     }
 
 
-    if(canbreak && iteration >= setting_minOptIterations) break;
-}
+    Vec10 newStateZero = Vec10::Zero();
+    newStateZero.segment<2>(6) = frameHessians.back()->pose.get_state().segment<2>(6);
+
+    frameHessians.back()->pose.setEvalPT(frameHessians.back()->pose.PRE_worldToCam,
+                                         newStateZero);
+    EFDeltaValid = false;
+    EFAdjointsValid = false;
+    ef.setAdjointsF(&hCalib);
+    setPrecalcValues();
 
 
-
-Vec10 newStateZero = Vec10::Zero();
-newStateZero.segment<2>(6) = frameHessians.back()->get_state().segment<2>(6);
-
-frameHessians.back()->setEvalPT(frameHessians.back()->PRE_worldToCam,
-                                newStateZero);
-EFDeltaValid=false;
-EFAdjointsValid=false;
-ef->setAdjointsF(&Hcalib);
-setPrecalcValues();
+    lastEnergy = linearizeAll(true);
+    Log::Logger::getInstance()->info("Forxed Linearization. Last energy: {}", lastEnergy[0]);
 
 
-
-
-lastEnergy = linearizeAll(true);
-
-
-
-
-if(!std::isfinite((double)lastEnergy[0]) || !std::isfinite((double)lastEnergy[1]) || !std::isfinite((double)lastEnergy[2]))
-{
-    printf("KF Tracking failed: LOST!\n");
-    isLost=true;
-}
-
-
-statistics_lastFineTrackRMSE = sqrtf((float)(lastEnergy[0] / (patternNum*ef->resInA)));
-
-if(calibLog != 0)
-{
-    (*calibLog) << Hcalib.value_scaled.transpose() <<
-                " " << frameHessians.back()->get_state_scaled().transpose() <<
-                " " << sqrtf((float)(lastEnergy[0] / (patternNum*ef->resInA))) <<
-                " " << ef->resInM << "\n";
-    calibLog->flush();
-}
-
-{
-    boost::unique_lock<boost::mutex> crlock(shellPoseMutex);
-    for(FrameHessian* fh : frameHessians)
-    {
-        fh->shell->camToWorld = fh->PRE_camToWorld;
-        fh->shell->aff_g2l = fh->aff_g2l();
+    if (!std::isfinite((double) lastEnergy[0]) || !std::isfinite((double) lastEnergy[1]) ||
+        !std::isfinite((double) lastEnergy[2])) {
+        Log::Logger::getInstance()->error("!!!!KF Tracking failed: LOST!!!!!!\n");
+        //isLost = true;
     }
-}
 
 
+    //statistics_lastFineTrackRMSE = sqrtf((float) (lastEnergy[0] / (patternNum * ef->resInA)));
 
-
-debugPlotTracking();
-
-return sqrtf((float)(lastEnergy[0] / (patternNum*ef->resInA)));
+    /*
+    if (calibLog != 0) {
+        (*calibLog) << hCalib.value_scaled.transpose() <<
+                    " " << frameHessians.back()->get_state_scaled().transpose() <<
+                    " " << sqrtf((float) (lastEnergy[0] / (patternNum * ef->resInA))) <<
+                    " " << ef->resInM << "\n";
+        calibLog->flush();
+    }
 */
-    return 12;
+    {
+        //boost::unique_lock<boost::mutex> crlock(shellPoseMutex);
+        for (auto &fh: frameHessians) {
+            fh->pose.frameToWorld = fh->pose.PRE_camToWorld; // TODO double check
+            fh->pose.aff_g2l() = fh->pose.aff_g2l();
+        }
+    }
+
+
+    //debugPlotTracking();
+
+    return sqrtf((float) (lastEnergy[0] / (patternNum * ef.resInA)));
 }
 
+void Tracker::solveSystem(int iteration, double lambda) {
+    ef.lastNullspaces_forLogging = getNullspaces(
+            ef.lastNullspaces_pose,
+            ef.lastNullspaces_scale,
+            ef.lastNullspaces_affA,
+            ef.lastNullspaces_affB);
+
+    ef.solveSystemF(iteration, lambda, &hCalib);
+}
+
+
+std::vector<VecX> Tracker::getNullspaces(
+        std::vector<VecX> &nullspaces_pose,
+        std::vector<VecX> &nullspaces_scale,
+        std::vector<VecX> &nullspaces_affA,
+        std::vector<VecX> &nullspaces_affB) {
+    nullspaces_pose.clear();
+    nullspaces_scale.clear();
+    nullspaces_affA.clear();
+    nullspaces_affB.clear();
+
+
+    int n = CPARS + frameHessians.size() * 8;
+    std::vector<VecX> nullspaces_x0_pre;
+    for (int i = 0; i < 6; i++) {
+        VecX nullspace_x0(n);
+        nullspace_x0.setZero();
+        for (auto &fh: frameHessians) {
+            nullspace_x0.segment<6>(CPARS + fh->trackingID * 8) = fh->pose.nullspaces_pose.col(i);
+            nullspace_x0.segment<3>(CPARS + fh->trackingID * 8) *= SCALE_XI_TRANS_INVERSE;
+            nullspace_x0.segment<3>(CPARS + fh->trackingID * 8 + 3) *= SCALE_XI_ROT_INVERSE;
+        }
+        nullspaces_x0_pre.push_back(nullspace_x0);
+        nullspaces_pose.push_back(nullspace_x0);
+    }
+    for (int i = 0; i < 2; i++) {
+        VecX nullspace_x0(n);
+        nullspace_x0.setZero();
+        for (auto &fh: frameHessians) {
+            nullspace_x0.segment<2>(CPARS + fh->trackingID * 8 + 6) = fh->pose.nullspaces_affine.col(i).head<2>();
+            nullspace_x0[CPARS + fh->trackingID * 8 + 6] *= SCALE_A_INVERSE;
+            nullspace_x0[CPARS + fh->trackingID * 8 + 7] *= SCALE_B_INVERSE;
+        }
+        nullspaces_x0_pre.push_back(nullspace_x0);
+        if (i == 0) nullspaces_affA.push_back(nullspace_x0);
+        if (i == 1) nullspaces_affB.push_back(nullspace_x0);
+    }
+
+    VecX nullspace_x0(n);
+    nullspace_x0.setZero();
+    for (auto &fh: frameHessians) {
+        nullspace_x0.segment<6>(CPARS + fh->trackingID * 8) = fh->pose.nullspaces_scale;
+        nullspace_x0.segment<3>(CPARS + fh->trackingID * 8) *= SCALE_XI_TRANS_INVERSE;
+        nullspace_x0.segment<3>(CPARS + fh->trackingID * 8 + 3) *= SCALE_XI_ROT_INVERSE;
+    }
+    nullspaces_x0_pre.push_back(nullspace_x0);
+    nullspaces_scale.push_back(nullspace_x0);
+
+    return nullspaces_x0_pre;
+}
+
+// applies step to linearization point.
+bool Tracker::doStepFromBackup(float stepfacC, float stepfacT, float stepfacR, float stepfacA, float stepfacD) {
+//	float meanStepC=0,meanStepP=0,meanStepD=0;
+//	meanStepC += Hcalib.step.norm();
+
+    Vec10 pstepfac;
+    pstepfac.segment<3>(0).setConstant(stepfacT);
+    pstepfac.segment<3>(3).setConstant(stepfacR);
+    pstepfac.segment<4>(6).setConstant(stepfacA);
+
+
+    float sumA = 0, sumB = 0, sumT = 0, sumR = 0, sumID = 0, numID = 0;
+
+    float sumNID = 0;
+
+    hCalib.setValue(hCalib.value_backup + stepfacC*hCalib.step);
+    for(auto& fh : frameHessians)
+    {
+        fh->pose.setState(fh->pose.state_backup + pstepfac.cwiseProduct(fh->pose.step));
+        sumA += fh->pose.step[6]*fh->pose.step[6];
+        sumB += fh->pose.step[7]*fh->pose.step[7];
+        sumT += fh->pose.step.segment<3>(0).squaredNorm();
+        sumR += fh->pose.step.segment<3>(3).squaredNorm();
+
+        for(PointHessian& ph : fh->pointHessians)
+        {
+            ph.setIdepth(ph.idepth_backup + stepfacD*ph.step);
+            sumID += ph.step*ph.step;
+            sumNID += fabsf(ph.idepth_backup);
+            numID++;
+
+            ph.setIdepthZero(ph.idepth_backup + stepfacD*ph.step);
+        }
+    }
+
+    sumA /= frameHessians.size();
+    sumB /= frameHessians.size();
+    sumR /= frameHessians.size();
+    sumT /= frameHessians.size();
+    sumID /= numID;
+    sumNID /= numID;
+
+
+    Log::Logger::getInstance()->info("STEPS: A {:.1f}; B {:.1f}; R {:.1f}; T {:.1f}. \t",
+                                     sqrtf(sumA) / (0.0005 * setting_thOptIterations),
+                                     sqrtf(sumB) / (0.00005 * setting_thOptIterations),
+                                     sqrtf(sumR) / (0.00005 * setting_thOptIterations),
+                                     sqrtf(sumT) * sumNID / (0.00005 * setting_thOptIterations));
+
+
+    EFDeltaValid = false;
+    setPrecalcValues();
+
+
+    return sqrtf(sumA) < 0.0005*setting_thOptIterations &&
+           sqrtf(sumB) < 0.00005*setting_thOptIterations &&
+           sqrtf(sumR) < 0.00005*setting_thOptIterations &&
+           sqrtf(sumT)*sumNID < 0.00005*setting_thOptIterations;
+//	printf("mean steps: %f %f %f!\n",
+//			meanStepC, meanStepP, meanStepD);
+}
+
+// sets linearization point.
+void Tracker::backupState(bool backupLastStep) {
+    hCalib.value_backup = hCalib.value;
+    for(auto& fh : frameHessians)
+    {
+        fh->pose.state_backup = fh->pose.get_state();
+        for(PointHessian& ph : fh->pointHessians)
+            ph.idepth_backup = ph.idepth;
+    }
+}
+
+// sets linearization point.
+void Tracker::loadSateBackup() {
+    hCalib.setValue(hCalib.value_backup);
+    for (auto &fh: frameHessians) {
+        fh->pose.setState(fh->pose.state_backup);
+        for (auto &ph: fh->pointHessians) {
+            ph.setIdepth(ph.idepth_backup);
+
+            ph.setIdepthZero(ph.idepth_backup);
+        }
+
+    }
+
+
+    EFDeltaValid = false;
+    setPrecalcValues();
+}
 
 void
 Tracker::linearizeAll_Reductor(bool fixLinearization, std::vector<PointFrameResidual *> *toRemove, int min, int max,
                                Vec10 *stats, int tid) {
+
+    Log::Logger::getInstance()->info("Active Points size: {}", max);
     for (int k = min; k < max; k++) {
         PointFrameResidual *r = activeResiduals[k];
         PointHessian *ph = &frameHessians[frameHessians.size() - 2]->pointHessians[k];
         auto host = frameHessians[frameHessians.size() - 2];
-        auto target = frameHessians[frameHessians.size() - 2];
+        auto target = frameHessians[frameHessians.size() - 1];
         (*stats)[0] += linearize(ph, &hCalib, r, host, target);
         EFResidual *efResidual = r->efResidual;
-
         if (fixLinearization) {
             VO::applyResidual(true, efResidual, r);
 
@@ -249,13 +368,14 @@ void Tracker::setNewFrameEnergyTH() {
     auto newFrame = frameHessians.back();
 
     for (PointFrameResidual *r: activeResiduals)
-        if (r->state_NewEnergyWithOutlier >= 0 && r->trackingID == newFrame->trackingID) {
+        if (r->state_NewEnergyWithOutlier >= 0 && r->target->trackingID == newFrame->trackingID) {
             allResVec.push_back(r->state_NewEnergyWithOutlier);
 
         }
 
     if (allResVec.size() == 0) {
         newFrame->frameEnergyTH = 12 * 12 * patternNum;
+        Log::Logger::getInstance()->info("allResVec should not be empty but it was anyways...");
         return;        // should never happen, but lets make sure.
     }
 
@@ -269,22 +389,12 @@ void Tracker::setNewFrameEnergyTH() {
     float nthElement = sqrtf(allResVec[nthIdx]);
 
 
-    newFrame->frameEnergyTH = nthElement * setting_frameEnergyTHFacMedian;
-    newFrame->frameEnergyTH =
-            26.0f * setting_frameEnergyTHConstWeight + newFrame->frameEnergyTH * (1 - setting_frameEnergyTHConstWeight);
-    newFrame->frameEnergyTH = newFrame->frameEnergyTH * newFrame->frameEnergyTH;
-    newFrame->frameEnergyTH *= setting_overallEnergyTHWeight * setting_overallEnergyTHWeight;
+    newFrame->frameEnergyTH = nthElement*setting_frameEnergyTHFacMedian;
+    newFrame->frameEnergyTH = 26.0f*setting_frameEnergyTHConstWeight + newFrame->frameEnergyTH*(1-setting_frameEnergyTHConstWeight);
+    newFrame->frameEnergyTH = newFrame->frameEnergyTH*newFrame->frameEnergyTH;
+    newFrame->frameEnergyTH *= setting_overallEnergyTHWeight*setting_overallEnergyTHWeight;
 
-
-
-//
-//	int good=0,bad=0;
-//	for(float f : allResVec) if(f<newFrame->frameEnergyTH) good++; else bad++;
-//	printf("EnergyTH: mean %f, median %f, result %f (in %d, out %d)! \n",
-//			meanElement, nthElement, sqrtf(newFrame->frameEnergyTH),
-//			good, bad);
-
-    Log::Logger::getInstance()->info("Set new frame threshold {}", newFrame->frameEnergyTH);
+    Log::Logger::getInstance()->info("nthIndex and nthElement {}, {}, new frame threshold", nthIdx, nthElement, newFrame->frameEnergyTH);
 }
 
 Vec3 Tracker::linearizeAll(bool fixLinearization) {
@@ -292,18 +402,15 @@ Vec3 Tracker::linearizeAll(bool fixLinearization) {
     double lastEnergyR = 0;
     double num = 0;
 
-
     std::vector<PointFrameResidual *> toRemove[NUM_THREADS];
     for (int i = 0; i < NUM_THREADS; i++) toRemove[i].clear();
 
-
     Vec10 stats;
+    stats.setZero();
     linearizeAll_Reductor(fixLinearization, toRemove, 0, activeResiduals.size(), &stats, 0);
     lastEnergyP = stats[0];
 
-
     setNewFrameEnergyTH();
-
 
     if (fixLinearization) {
 
@@ -341,7 +448,7 @@ Vec3 Tracker::linearizeAll(bool fixLinearization) {
                     }
             }
         }
-        Log::Logger::getInstance()->info("FINAL LINEARIZATION: removed %d / %d residuals!\n", nResRemoved,
+        Log::Logger::getInstance()->info("FINAL LINEARIZATION: removed {} / {} residuals!", nResRemoved,
                                          (int) activeResiduals.size());
     }
 

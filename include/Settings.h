@@ -56,10 +56,24 @@ static int staticPattern[8][2] = {
 #define   setting_minGoodActiveResForMarg 3
 #define   setting_minGoodResForMarg 4
 
+#define SOLVER_SVD (int)1
+#define SOLVER_ORTHOGONALIZE_SYSTEM (int)2
+#define SOLVER_ORTHOGONALIZE_POINTMARG (int)4
+#define SOLVER_ORTHOGONALIZE_FULL (int)8
+#define SOLVER_SVD_CUT7 (int)16
 #define SOLVER_REMOVE_POSEPRIOR (int)32
+#define SOLVER_USE_GN (int)64
 #define SOLVER_FIX_LAMBDA (int)128
+#define SOLVER_ORTHOGONALIZE_X (int)256
+#define SOLVER_MOMENTUM (int)512
+#define SOLVER_STEPMOMENTUM (int)1024
 #define SOLVER_ORTHOGONALIZE_X_LATER (int)2048
+
+
+/* some modes for solving the resulting linear system (e.g. orthogonalize wrt. unobservable dimensions) */
 #define setting_solverMode SOLVER_FIX_LAMBDA | SOLVER_ORTHOGONALIZE_X_LATER
+#define setting_solverModeDelta 0.00001
+#define setting_forceAceptStep false
 
 #define patternPadding 2
 #define patternNum 8
@@ -93,5 +107,9 @@ static int staticPattern[8][2] = {
 /* some thresholds on when to activate / marginalize points */
 #define setting_minIdepthH_act 100
 #define setting_minIdepthH_marg 50
+
+// Becnhmark settings
+#define benchmark_initializerSlackFactor 1
+
 
 #endif //VGIS10_SETTINGS_H

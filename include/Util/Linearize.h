@@ -61,15 +61,15 @@ EIGEN_STRONG_INLINE bool projectPoint(
 
 
 
-static inline double linearize(PointHessian* point, CalibHessian* HCalib, PointFrameResidual* pointRes, std::shared_ptr<VO::Frame> host, std::shared_ptr<VO::Frame> target){
+static double linearize(PointHessian* point, CalibHessian* HCalib, PointFrameResidual* pointRes, const std::shared_ptr<VO::Frame>& host, const std::shared_ptr<VO::Frame>& target){
     pointRes->state_NewEnergyWithOutlier=-1;
 
     if(pointRes->state_state == ResState::OOB)
-    { pointRes->state_NewState = ResState::OOB; return  pointRes->state_energy; }
-
-    VO::FrameToFramePrecalc* precalc = &host->targetPrecalc[host->trackingID];
+    { pointRes->state_NewState = ResState::OOB; return pointRes->state_energy; }
+    //Log::Logger::getInstance()->info("This: {}", static_cast<void *>(host.get()));
+    VO::FrameToFramePrecalc* precalc = &(host->targetPrecalc[target->trackingID]);
     float energyLeft=0;
-    const Eigen::Vector3f* dIl = target->color.data();
+    const Eigen::Vector3f* dIl = target->pyramid[0].data();
     //const float* const Il = target->I;
     const Mat33f &PRE_KRKiTll = precalc->PRE_KRKiTll;
     const Vec3f &PRE_KtTll = precalc->PRE_KtTll;
@@ -91,7 +91,7 @@ static inline double linearize(PointHessian* point, CalibHessian* HCalib, PointF
         Vec3f KliP;
 
         if(!projectPoint(point->u, point->v, point->idepth_zero_scaled, 0, 0,HCalib,
-                         PRE_RTll_0,PRE_tTll_0, drescale, u, v, Ku, Kv, KliP, new_idepth, host->width - 3, host->height - 3))
+                         PRE_RTll_0,PRE_tTll_0, drescale, u, v, Ku, Kv, KliP, new_idepth, host->width-3, host->height - 3))
         { pointRes->state_NewState = ResState::OOB; return pointRes->state_energy; }
 
         pointRes->centerProjectedTo = Vec3f(Ku, Kv, new_idepth);
@@ -175,9 +175,10 @@ static inline double linearize(PointHessian* point, CalibHessian* HCalib, PointF
         pointRes->projectedTo[idx][1] = Kv;
 
 
-        Vec3f hitColor = (VO::getInterpolatedElement33(dIl, Ku, Kv, host->height));
+        Vec3f hitColor = (VO::getInterpolatedElement33(dIl, Ku, Kv, host->width));
         float residual = hitColor[0] - (float)(affLL[0] * color[idx] + affLL[1]);
 
+        //printf("Hitcolor %f %f %f at %f, %f\n", hitColor.x(), hitColor.y(), hitColor.z(), Ku, Kv);
 
 
         float drdA = (color[idx]-b0);
@@ -204,7 +205,7 @@ static inline double linearize(PointHessian* point, CalibHessian* HCalib, PointF
 
             pointRes->J->JIdx[0][idx] = hitColor[1];
             pointRes->J->JIdx[1][idx] = hitColor[2];
-            pointRes->J->JabF[0][idx] = drdA*hw;
+            pointRes->J->JabF[0][idx] = drdA*hw; // ab prior thing?
             pointRes->J->JabF[1][idx] = hw;
 
             JIdxJIdx_00+=hitColor[1]*hitColor[1];
@@ -222,9 +223,6 @@ static inline double linearize(PointHessian* point, CalibHessian* HCalib, PointF
 
 
             wJI2_sum += hw*hw*(hitColor[1]*hitColor[1]+hitColor[2]*hitColor[2]);
-
-            if(setting_affineOptModeA < 0) pointRes->J->JabF[0][idx]=0;
-            if(setting_affineOptModeB < 0) pointRes->J->JabF[1][idx]=0;
 
         }
     }
@@ -244,9 +242,9 @@ static inline double linearize(PointHessian* point, CalibHessian* HCalib, PointF
 
     pointRes->state_NewEnergyWithOutlier = energyLeft;
 
-    if(energyLeft > std::max<float>(host->pose.frameEnergyTH, target->pose.frameEnergyTH) || wJI2_sum < 2)
+    if(energyLeft > std::max<float>(host->frameEnergyTH, target->frameEnergyTH) || wJI2_sum < 2)
     {
-        energyLeft = std::max<float>(host->pose.frameEnergyTH, target->pose.frameEnergyTH);
+        energyLeft = std::max<float>(host->frameEnergyTH, target->frameEnergyTH);
         pointRes->state_NewState = ResState::OUTLIER;
     }
     else

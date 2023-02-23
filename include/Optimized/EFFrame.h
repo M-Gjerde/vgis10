@@ -14,12 +14,12 @@ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
     EFFrame(std::shared_ptr<VO::Frame> frameIn)
     {
+        frameID = frameIn->trackingID;
+        data = frameIn;
 
         prior =frameIn->pose.getPrior().head<8>();
         delta = frameIn->pose.get_state_minus_stateZero().head<8>();
         delta_prior =  (frameIn->pose.get_state() - frameIn->pose.getPriorZero()).head<8>();
-        frameID = frameIn->trackingID;
-        data = frameIn;
     }
 
     std::shared_ptr<VO::Frame> data;
