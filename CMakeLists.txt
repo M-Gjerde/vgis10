@@ -24,23 +24,12 @@ set(SRC_FILES
         src/Optimized/AccumulatedSCHessian.cpp
         src/Optimized/AccumulatedTopHessian.cpp
         src/Optimized/Energy.cpp
-
-        include/TrackerInitializer.h
-        include/ImmaturePoint.h
-        include/CalibHessian.h
-        include/Util/IndexThreadReduce.h
-        include/PointHessian.h
-        include/Optimized/PointFrameResidual.h
-        include/Optimized/EFResidual.h
-        include/Optimized/EFPoint.h
-        include/Optimized/EFPoint.h
-        include/Optimized/EFFrame.h
-        include/Optimized/EFFrame.h
-        include/CoarseDistanceMap.h
-        include/ImmaturePointTemporaryResidual.h
-        include/Util/Enums.h
-        include/Util/Linearize.h
-        src/TrackerOptimize.cpp)
+        src/ImmaturePoint.cpp
+        src/TrackerOptimize.cpp
+        src/CoarseTracker.cpp
+        src/Optimized/PointFrameResidual.cpp
+        src/PointHessian.cpp
+        src/Optimized/EFResidual.cpp)
 
 add_executable(vgis10 ${SRC_FILES})
 target_link_libraries(vgis10 fmt::fmt ${OpenCV_LIBS} Eigen3::Eigen sophus yaml-cpp::yaml-cpp -lboost_thread)

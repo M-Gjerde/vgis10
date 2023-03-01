@@ -11,82 +11,85 @@
 #include "Util/Enums.h"
 #include "RawResidualJacobian.h"
 
+class CalibHessian;
+
 class EFResidual;
 class PointHessian;
 namespace VO {
     class Frame;
 }
+class PointHessian;
+
+class EFResidual;
+
 
 struct FullJacRowT
+{
+    Eigen::Vector2f projectedTo[MAX_RES_PER_POINT];
+};
+
+class PointFrameResidual
+{
+public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+    EFResidual* efResidual;
+
+    static int instanceCounter;
+
+
+    ResState state_state;
+    double state_energy;
+    ResState state_NewState;
+    double state_NewEnergy;
+    double state_NewEnergyWithOutlier;
+
+
+    void setState(ResState s) {state_state = s;}
+
+
+    PointHessian* point;
+    VO::Frame* host;
+    VO::Frame* target;
+    RawResidualJacobian* J;
+
+
+    bool isNew;
+
+
+    Eigen::Vector2f projectedTo[MAX_RES_PER_POINT];
+    Vec3f centerProjectedTo;
+
+    ~PointFrameResidual(){assert(efResidual==0); delete J;}
+    PointFrameResidual();
+    PointFrameResidual(PointHessian* point_, VO::Frame* host_, VO::Frame* target_) :
+            point(point_),
+            host(host_),
+            target(target_)
     {
-        Eigen::Vector2f projectedTo[MAX_RES_PER_POINT];
-    };
+        efResidual=0;
+        resetOOB();
+        J = new RawResidualJacobian();
+        assert(((long)J)%16==0);
 
-    class PointFrameResidual
+        isNew=true;
+    }
+    double linearize(CalibHessian* HCalib);
+
+
+    void resetOOB()
     {
-    public:
-        EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-        explicit PointFrameResidual(int index)
-        {
-            resetOOB();
-            J = new RawResidualJacobian();
+        state_NewEnergy = state_energy = 0;
+        state_NewState = ResState::OUTLIER;
 
-            pointIndex = index;
-            isNew = true;
-        }
-
-        EFResidual* efResidual;
-        VO::Frame* host;
-        VO::Frame* target;
-        PointHessian* pointH;
-
-        ResState state_state;
-        double state_energy;
-        ResState state_NewState;
-        double state_NewEnergy;
-        double state_NewEnergyWithOutlier;
-        bool isNew;
-
-        void setState(ResState s) {state_state = s;}
-        RawResidualJacobian* J;
-        Eigen::Vector2f projectedTo[MAX_RES_PER_POINT];
-        Vec3f centerProjectedTo;
-        int trackingID = 0;
-        int pointIndex = 0; // Which point this residual belongs to
-
-
-        ~PointFrameResidual() {
-        };
-
-
-        void resetOOB()
-        {
-            state_NewEnergy = state_energy = 0;
-            state_NewState = ResState::OUTLIER;
-
-            setState(ResState::IN);
-        };
-        /*
-        void applyRes( bool copyJacobians) {
-            if (copyJacobians) {
-                if (state_state == ResState::OOB) {
-                    assert(!efResidual->isActiveAndIsGoodNEW);
-                    return;    // can never go back from OOB
-                }
-                if (state_NewState == ResState::IN)// && )
-                {
-                    efResidual->isActiveAndIsGoodNEW=true;
-                    efResidual->takeDataF();
-                } else {
-                    efResidual->isActiveAndIsGoodNEW=false;
-                }
-            }
-
-            setState(state_NewState);
-            state_energy = state_NewEnergy;
-        }
-         */
+        setState(ResState::IN);
     };
+    void applyRes(bool copyJacobians);
+
+    void debugPlot();
+
+    void printRows(std::vector<VecX> &v, VecX &r, int nFrames, int nPoints, int M, int res);
+};
 
 
 

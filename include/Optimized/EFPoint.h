@@ -10,11 +10,13 @@
 #include "Settings.h"
 #include "EFResidual.h"
 
+class EFFrame;
+
 class EFPoint
 {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
-    EFPoint(PointHessian* ph)
+    EFPoint(PointHessian* ph, EFFrame* host_) : data(ph),host(host_)
     {
         priorF = ph->hasDepthPrior ? setting_idepthFixPrior*SCALE_IDEPTH*SCALE_IDEPTH : 0;
 
@@ -23,9 +25,9 @@ public:
         data = ph;
     }
 
-    std::vector<EFResidual> residualsAll;
+    std::vector<EFResidual *> residualsAll;
     PointHessian* data;
-
+    EFFrame* host;
     float priorF;
     float deltaF;
 

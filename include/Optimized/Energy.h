@@ -25,11 +25,11 @@ public:
     ~EnergyFunctional();
 
 
-    void insertResidual(PointFrameResidual *r, int hostFrameID, int targetFrameID);
+    void insertResidual(PointFrameResidual *r);
     void insertFrame(std::shared_ptr<VO::Frame> fh, CalibHessian* Hcalib);
-    void insertPoint(PointHessian *ph, uint32_t i);
+    void insertPoint(PointHessian *ph);
 
-    void dropResidual(PointFrameResidual* r);
+    void dropResidual(EFResidual *r);
     void marginalizeFrame(EFFrame* fh);
     void removePoint(EFPoint* ph);
 
@@ -48,7 +48,7 @@ public:
 
     void setAdjointsF(CalibHessian* Hcalib);
 
-    std::vector<EFFrame> eFrames;
+    std::vector<EFFrame *> eFrames;
 
     int nPoints, nFrames, nResiduals;
 

@@ -22,6 +22,8 @@
 #include "CoarseDistanceMap.h"
 #include "ImmaturePointTemporaryResidual.h"
 #include "Util/Populate.h"
+#include "CoarseTracker.h"
+#include "PointSelection.h"
 
 struct Info {
     SE3 thisToNext;
@@ -64,7 +66,6 @@ public:
         info.thisToNext_aff = AffLight(0,0);
         calibration = calib;
         //energyFunctional = std::make_unique<EnergyFunctional>();
-        immaturePoints.resize(2);
         VO::initCalibHessian(&hCalib, calib);
 
         ef.red = &this->treadReduce;
@@ -104,6 +105,13 @@ public:
         nullspacesLog = new std::ofstream();
         nullspacesLog->open("logs/nullspacesLog.txt", std::ios::trunc | std::ios::out);
         nullspacesLog->precision(10);
+
+        coarseTracker = new CoarseTracker(calib->wG[0], calib->hG[0], calib);
+        coarseTracker_forNewKF = new CoarseTracker(calib->wG[0], calib->hG[0], calib);
+        pixelSelector = new VO::PointSelection(calib->wG[0], calib->hG[0]);
+        selectionMap = new float[calib->wG[0] * calib->hG[0]];
+        lastCoarseRMSE.setConstant(100);
+
     }
     ~Tracker(){
         calibLog->close(); delete calibLog;
@@ -120,19 +128,21 @@ public:
     // Keep first two frames in memory
     std::shared_ptr<VO::Frame> firstFrame;
     std::shared_ptr<VO::Frame> secondFrame; // Second frame after initialization
-
+    VO::PointSelection * pixelSelector;
+    float* selectionMap;
 
     CalibHessian hCalib;
     const CameraCalibration* calibration;
     CoarseDistanceMap coarseDistanceMap;
+    CoarseTracker* coarseTracker_forNewKF, *coarseTracker;
     // All tracking math
     //std::unique_ptr<EnergyFunctional> energyFunctional;
     std::vector<std::shared_ptr<VO::Frame>> frameHessians;
     std::vector<PointFrameResidual*> activeResiduals{};
 
-    std::vector<std::shared_ptr<VO::FramePose>> allKeyFramesHistory;
+    std::vector<VO::FramePose*> allKeyFramesHistory;
+    std::vector<VO::FramePose*> allFrameHistory;
 
-    std::vector<std::vector<ImmaturePoint>> immaturePoints;     // contains all OUTLIER points (= discarded.).
     EnergyFunctional ef;
     dso::IndexThreadReduce<Vec10> treadReduce;
 
@@ -141,12 +151,16 @@ public:
     Info info;
     float currentMinActDist = 2;
     std::vector<float> allResVec;
+    Vec5 lastCoarseRMSE;
 
 
     bool initializerTrackFrame(const std::shared_ptr<VO::Frame> &frame, const CameraCalibration *calibration);
 
     void initializeFromInitializer();
-    void takeTrackedFrame(std::shared_ptr<VO::Frame> frame, bool needKF);
+    void takeTrackedFrame(const std::shared_ptr<VO::Frame> &frame, bool needKF);
+
+    Vec4 trackNewCoarse(std::shared_ptr<VO::Frame> fh);
+
 private:
 
     void makeKeyFrame(std::shared_ptr<VO::Frame> frame);
@@ -162,11 +176,13 @@ private:
     void setPrecalcValues();
 
     void
-    activatePointsMT_Reductor(std::vector<PointHessian> *optimized, std::vector<ImmaturePoint> *toOptimize, int min,
-                              int max, Vec10 *stats, int tid);
+    activatePointsMT_Reductor(
+            std::vector<PointHessian*>* optimized,
+            std::vector<ImmaturePoint*>* toOptimize,
+            int min, int max, Vec10* stats, int tid);
 
-    void optimizeImmaturePoint(ImmaturePoint *point, int minObs, ImmaturePointTemporaryResidual *residuals,
-                               PointHessian *phOut);
+    PointHessian* optimizeImmaturePoint(ImmaturePoint* point, int minObs,
+                               ImmaturePointTemporaryResidual* residuals);
 
     float optimize(int mnumOptIts);
 
@@ -200,6 +216,15 @@ private:
     std::ofstream* variancesLog;
     std::ofstream* nullspacesLog;
 
+    void removeOutliers();
+
+    void applyRes_Reductor(bool b, int min, int max, Vec10* stats, int tid);
+
+    void flagPointsForRemoval();
+
+    void marginalizeFrame(VO::Frame *frame);
+
+    void makeNewTraces(std::shared_ptr<VO::Frame> newFrame, float *gtDepth);
 };
 
 

@@ -17,20 +17,24 @@ float Tracker::optimize(int mnumOptIts) {
     activeResiduals.clear();
     int numPoints = 0;
     int numLRes = 0;
-    for (auto &fh: frameHessians)
-        for (PointHessian &ph: fh->pointHessians) {
-            for (PointFrameResidual &r: ph.residuals) {
-                if (!r.efResidual->isLinearized) {
-                    activeResiduals.push_back(&r);
-                    r.resetOOB();
-                } else
+    for(auto& fh : frameHessians)
+        for(PointHessian* ph : fh->pointHessians)
+        {
+            for(PointFrameResidual* r : ph->residuals)
+            {
+                if(!r->efResidual->isLinearized)
+                {
+                    activeResiduals.push_back(r);
+                    r->resetOOB();
+                }
+                else
                     numLRes++;
             }
             numPoints++;
         }
 
 
-    Log::Logger::getInstance()->info("OPTIMIZE {} pts, {} active res, {} lin res!", ef.nPoints,
+    Log::Logger::getInstance()->info("OPTIMIZE With {} pts, {} active res, {} lin res!", ef.nPoints,
                                      activeResiduals.size(), numLRes);
 
 
@@ -40,16 +44,15 @@ float Tracker::optimize(int mnumOptIts) {
     double lastEnergyM = ef.calcMEnergyF();
     Log::Logger::getInstance()->info("Last Energy L: {} and M: {}", lastEnergyL, lastEnergyM);
 
-    for (int k = 0; k < activeResiduals.size(); k++) {
-        VO::applyResidual(true, activeResiduals[k]->efResidual, activeResiduals[k]);
-    }
+    applyRes_Reductor(true,0,activeResiduals.size(),0,0);
+
     Log::Logger::getInstance()->info("INITIAL ERROR \t A({})=(AV {:.3f}). Num: A({}) + M({}); ab {} {}! ",
                                      lastEnergy[0],
                                      sqrtf((float) (lastEnergy[0] / (patternNum * ef.resInA))),
                                      ef.resInA,
                                      ef.resInM,
-                                     frameHessians.back()->pose.aff_g2l().a,
-                                     frameHessians.back()->pose.aff_g2l().b);
+                                     frameHessians.back()->pose->aff_g2l().a,
+                                     frameHessians.back()->pose->aff_g2l().b);
 
     double lambda = 1e-1;
     float stepsize = 1;
@@ -91,16 +94,15 @@ float Tracker::optimize(int mnumOptIts) {
                                          sqrtf((float) (newEnergy[0] / (patternNum * ef.resInA))),
                                          ef.resInA,
                                          ef.resInM,
-                                         frameHessians.back()->pose.aff_g2l().a,
-                                         frameHessians.back()->pose.aff_g2l().b);
+                                         frameHessians.back()->pose->aff_g2l().a,
+                                         frameHessians.back()->pose->aff_g2l().b);
 
         if (setting_forceAceptStep || (newEnergy[0] + newEnergy[1] + newEnergyL + newEnergyM <
                                        lastEnergy[0] + lastEnergy[1] + lastEnergyL + lastEnergyM)) {
 
 
-            for (int k = 0; k < activeResiduals.size(); k++) {
-                VO::applyResidual(true, activeResiduals[k]->efResidual, activeResiduals[k]);
-            }
+            applyRes_Reductor(true,0,activeResiduals.size(),0,0);
+
 
             lastEnergy = newEnergy;
             lastEnergyL = newEnergyL;
@@ -124,9 +126,9 @@ float Tracker::optimize(int mnumOptIts) {
 
 
     Vec10 newStateZero = Vec10::Zero();
-    newStateZero.segment<2>(6) = frameHessians.back()->pose.get_state().segment<2>(6);
+    newStateZero.segment<2>(6) = frameHessians.back()->pose->get_state().segment<2>(6);
 
-    frameHessians.back()->pose.setEvalPT(frameHessians.back()->pose.PRE_worldToCam,
+    frameHessians.back()->pose->setEvalPT(frameHessians.back()->pose->PRE_worldToCam,
                                          newStateZero);
     EFDeltaValid = false;
     EFAdjointsValid = false;
@@ -159,8 +161,8 @@ float Tracker::optimize(int mnumOptIts) {
     {
         //boost::unique_lock<boost::mutex> crlock(shellPoseMutex);
         for (auto &fh: frameHessians) {
-            fh->pose.frameToWorld = fh->pose.PRE_camToWorld; // TODO double check
-            fh->pose.aff_g2l() = fh->pose.aff_g2l();
+            fh->pose->frameToWorld = fh->pose->PRE_camToWorld; // TODO double check
+            fh->pose->aff_g2l() = fh->pose->aff_g2l();
         }
     }
 
@@ -198,7 +200,7 @@ std::vector<VecX> Tracker::getNullspaces(
         VecX nullspace_x0(n);
         nullspace_x0.setZero();
         for (auto &fh: frameHessians) {
-            nullspace_x0.segment<6>(CPARS + fh->trackingID * 8) = fh->pose.nullspaces_pose.col(i);
+            nullspace_x0.segment<6>(CPARS + fh->trackingID * 8) = fh->pose->nullspaces_pose.col(i);
             nullspace_x0.segment<3>(CPARS + fh->trackingID * 8) *= SCALE_XI_TRANS_INVERSE;
             nullspace_x0.segment<3>(CPARS + fh->trackingID * 8 + 3) *= SCALE_XI_ROT_INVERSE;
         }
@@ -209,7 +211,7 @@ std::vector<VecX> Tracker::getNullspaces(
         VecX nullspace_x0(n);
         nullspace_x0.setZero();
         for (auto &fh: frameHessians) {
-            nullspace_x0.segment<2>(CPARS + fh->trackingID * 8 + 6) = fh->pose.nullspaces_affine.col(i).head<2>();
+            nullspace_x0.segment<2>(CPARS + fh->trackingID * 8 + 6) = fh->pose->nullspaces_affine.col(i).head<2>();
             nullspace_x0[CPARS + fh->trackingID * 8 + 6] *= SCALE_A_INVERSE;
             nullspace_x0[CPARS + fh->trackingID * 8 + 7] *= SCALE_B_INVERSE;
         }
@@ -221,7 +223,7 @@ std::vector<VecX> Tracker::getNullspaces(
     VecX nullspace_x0(n);
     nullspace_x0.setZero();
     for (auto &fh: frameHessians) {
-        nullspace_x0.segment<6>(CPARS + fh->trackingID * 8) = fh->pose.nullspaces_scale;
+        nullspace_x0.segment<6>(CPARS + fh->trackingID * 8) = fh->pose->nullspaces_scale;
         nullspace_x0.segment<3>(CPARS + fh->trackingID * 8) *= SCALE_XI_TRANS_INVERSE;
         nullspace_x0.segment<3>(CPARS + fh->trackingID * 8 + 3) *= SCALE_XI_ROT_INVERSE;
     }
@@ -249,20 +251,20 @@ bool Tracker::doStepFromBackup(float stepfacC, float stepfacT, float stepfacR, f
     hCalib.setValue(hCalib.value_backup + stepfacC*hCalib.step);
     for(auto& fh : frameHessians)
     {
-        fh->pose.setState(fh->pose.state_backup + pstepfac.cwiseProduct(fh->pose.step));
-        sumA += fh->pose.step[6]*fh->pose.step[6];
-        sumB += fh->pose.step[7]*fh->pose.step[7];
-        sumT += fh->pose.step.segment<3>(0).squaredNorm();
-        sumR += fh->pose.step.segment<3>(3).squaredNorm();
+        fh->pose->setState(fh->pose->state_backup + pstepfac.cwiseProduct(fh->pose->step));
+        sumA += fh->pose->step[6]*fh->pose->step[6];
+        sumB += fh->pose->step[7]*fh->pose->step[7];
+        sumT += fh->pose->step.segment<3>(0).squaredNorm();
+        sumR += fh->pose->step.segment<3>(3).squaredNorm();
 
-        for(PointHessian& ph : fh->pointHessians)
+        for(PointHessian* ph : fh->pointHessians)
         {
-            ph.setIdepth(ph.idepth_backup + stepfacD*ph.step);
-            sumID += ph.step*ph.step;
-            sumNID += fabsf(ph.idepth_backup);
+            ph->setIdepth(ph->idepth_backup + stepfacD*ph->step);
+            sumID += ph->step*ph->step;
+            sumNID += fabsf(ph->idepth_backup);
             numID++;
 
-            ph.setIdepthZero(ph.idepth_backup + stepfacD*ph.step);
+            ph->setIdepthZero(ph->idepth_backup + stepfacD*ph->step);
         }
     }
 
@@ -298,9 +300,9 @@ void Tracker::backupState(bool backupLastStep) {
     hCalib.value_backup = hCalib.value;
     for(auto& fh : frameHessians)
     {
-        fh->pose.state_backup = fh->pose.get_state();
-        for(PointHessian& ph : fh->pointHessians)
-            ph.idepth_backup = ph.idepth;
+        fh->pose->state_backup = fh->pose->get_state();
+        for(PointHessian* ph : fh->pointHessians)
+            ph->idepth_backup = ph->idepth;
     }
 }
 
@@ -308,11 +310,11 @@ void Tracker::backupState(bool backupLastStep) {
 void Tracker::loadSateBackup() {
     hCalib.setValue(hCalib.value_backup);
     for (auto &fh: frameHessians) {
-        fh->pose.setState(fh->pose.state_backup);
-        for (auto &ph: fh->pointHessians) {
-            ph.setIdepth(ph.idepth_backup);
+        fh->pose->setState(fh->pose->state_backup);
+        for (auto* ph: fh->pointHessians) {
+            ph->setIdepth(ph->idepth_backup);
 
-            ph.setIdepthZero(ph.idepth_backup);
+            ph->setIdepthZero(ph->idepth_backup);
         }
 
     }
@@ -326,34 +328,33 @@ void
 Tracker::linearizeAll_Reductor(bool fixLinearization, std::vector<PointFrameResidual *> *toRemove, int min, int max,
                                Vec10 *stats, int tid) {
 
-    Log::Logger::getInstance()->info("Active Points size: {}", max);
-    for (int k = min; k < max; k++) {
-        PointFrameResidual *r = activeResiduals[k];
-        PointHessian *ph = &frameHessians[frameHessians.size() - 2]->pointHessians[k];
-        auto host = frameHessians[frameHessians.size() - 2];
-        auto target = frameHessians[frameHessians.size() - 1];
-        (*stats)[0] += linearize(ph, &hCalib, r, host, target);
-        EFResidual *efResidual = r->efResidual;
-        if (fixLinearization) {
-            VO::applyResidual(true, efResidual, r);
+    for(int k=min;k<max;k++)
+    {
+        PointFrameResidual* r = activeResiduals[k];
+        (*stats)[0] += r->linearize(&hCalib);
 
-            if (efResidual->isActive()) {
-                if (r->isNew) {
-                    PointHessian *p = ph;
-                    Vec3f ptp_inf = host->targetPrecalc[target->trackingID].PRE_KRKiTll *
-                                    Vec3f(p->u, p->v, 1);    // projected point assuming infinite depth.
-                    Vec3f ptp = ptp_inf + host->targetPrecalc[target->trackingID].PRE_KtTll *
-                                          p->idepth_scaled;    // projected point with real depth.
-                    float relBS = 0.01 * ((ptp_inf.head<2>() / ptp_inf[2]) -
-                                          (ptp.head<2>() / ptp[2])).norm();    // 0.01 = one pixel.
+        if(fixLinearization)
+        {
+            r->applyRes(true);
+
+            if(r->efResidual->isActive())
+            {
+                if(r->isNew)
+                {
+                    PointHessian* p = r->point;
+                    Vec3f ptp_inf = r->host->targetPrecalc[r->target->trackingID].PRE_KRKiTll * Vec3f(p->u,p->v, 1);	// projected point assuming infinite depth.
+                    Vec3f ptp = ptp_inf + r->host->targetPrecalc[r->target->trackingID].PRE_KtTll*p->idepth_scaled;	// projected point with real depth.
+                    float relBS = 0.01*((ptp_inf.head<2>() / ptp_inf[2])-(ptp.head<2>() / ptp[2])).norm();	// 0.01 = one pixel.
 
 
-                    if (relBS > p->maxRelBaseline)
+                    if(relBS > p->maxRelBaseline)
                         p->maxRelBaseline = relBS;
 
                     p->numGoodResiduals++;
                 }
-            } else {
+            }
+            else
+            {
                 toRemove[tid].push_back(activeResiduals[k]);
             }
         }
@@ -416,10 +417,10 @@ Vec3 Tracker::linearizeAll(bool fixLinearization) {
 
 
         for (PointFrameResidual *r: activeResiduals) {
-            PointHessian *ph = r->pointH;
-            if (ph->lastResiduals[0].first == r)
+            PointHessian* ph = r->point;
+            if(ph->lastResiduals[0].first == r)
                 ph->lastResiduals[0].second = r->state_state;
-            else if (ph->lastResiduals[1].first == r)
+            else if(ph->lastResiduals[1].first == r)
                 ph->lastResiduals[1].second = r->state_state;
 
 
@@ -428,21 +429,18 @@ Vec3 Tracker::linearizeAll(bool fixLinearization) {
         int nResRemoved = 0;
         for (int i = 0; i < NUM_THREADS; i++) {
             for (PointFrameResidual *r: toRemove[i]) {
-                PointHessian *ph = r->pointH;
+                PointHessian* ph = r->point;
 
-                if (ph->lastResiduals[0].first == r)
-                    ph->lastResiduals[0].first = 0;
-                else if (ph->lastResiduals[1].first == r)
-                    ph->lastResiduals[1].first = 0;
+                if(ph->lastResiduals[0].first == r)
+                    ph->lastResiduals[0].first=0;
+                else if(ph->lastResiduals[1].first == r)
+                    ph->lastResiduals[1].first=0;
 
-                for (unsigned int k = 0; k < ph->residuals.size(); k++)
-                    if (ph->residuals[k].pointIndex == r->pointIndex) {
-                        ef.dropResidual(r);
-
-                        auto it = ph->residuals.begin();
-                        std::advance(it, k);
-                        ph->residuals.erase(it);
-
+                for(unsigned int k=0; k<ph->residuals.size();k++)
+                    if(ph->residuals[k] == r)
+                    {
+                        ef.dropResidual(r->efResidual);
+                        deleteOut<PointFrameResidual>(ph->residuals,k);
                         nResRemoved++;
                         break;
                     }
@@ -453,5 +451,32 @@ Vec3 Tracker::linearizeAll(bool fixLinearization) {
     }
 
     return Vec3(lastEnergyP, lastEnergyR, num);
+}
+
+void Tracker::removeOutliers() {
+    int numPointsDropped=0;
+    for(auto& fh : frameHessians)
+    {
+        for(unsigned int i=0;i<fh->pointHessians.size();i++)
+        {
+            PointHessian* ph = fh->pointHessians[i];
+            if(ph==0) {
+                std::cout << "Poiint hessian " << std::endl;
+                continue;
+
+            }
+
+            if(ph->residuals.size() == 0)
+            {
+                fh->pointHessiansOut.push_back(ph);
+                ph->efPoint->stateFlag = EFPointStatus::PS_DROP;
+                fh->pointHessians[i] = fh->pointHessians.back();
+                fh->pointHessians.pop_back();
+                i--;
+                numPointsDropped++;
+            }
+        }
+    }
+    ef.dropPointsF();
 }
 

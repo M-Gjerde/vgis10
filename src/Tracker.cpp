@@ -7,10 +7,12 @@
 #include "TrackerInitializer.h"
 #include "PointHessian.h"
 #include "Optimized/PointFrameResidual.h"
+#include <sophus/so3.hpp>
+#include "sophus/se3.hpp"
 
 void Tracker::initializeFromInitializer() {
     firstFrame->trackingID = 0;
-    firstFrame->pose.trackingID = 0;
+    firstFrame->pose->trackingID = 0;
     ef.insertFrame(firstFrame, &hCalib);
 
     // RescaleFactor
@@ -30,46 +32,43 @@ void Tracker::initializeFromInitializer() {
         if (rand() / (float) RAND_MAX > keepPercentage) continue;
         Pnt *point = points.pointsLevel[0].data() + i;
 
-        ImmaturePoint pt(point->u + 0.5f, point->v + 0.5f, point->my_type, firstFrame); // why add 0.5f?
-        if (!std::isfinite(pt.energyTH)) continue;
-        pt.idepth_max = pt.idepth_min = 1;
+        ImmaturePoint *pt = new ImmaturePoint(point->u + 0.5f, point->v + 0.5f, point->my_type, firstFrame);
 
-        PointHessian ph;
-        VO::pointHessianFromImmaturePoint(&pt, &ph);
-        if (!std::isfinite(ph.energyTH)) continue;
-        ph.setIdepthScaled(point->iR * rescaleFactor);
-        ph.setIdepthZero(ph.idepth);
-        ph.hasDepthPrior = true;
-        ph.setPointStatus(PointHessian::ACTIVE);
-        ph.pointIndex = ptIdx;
+        if (!std::isfinite(pt->energyTH)) continue;
+        pt->idepth_max = pt->idepth_min = 1;
+
+        PointHessian *ph = new PointHessian(pt, &hCalib);
+        //VO::pointHessianFromImmaturePoint(&pt, ph);k
+        if (!std::isfinite(ph->energyTH)) continue;
+        ph->setIdepthScaled(point->iR * rescaleFactor);
+        ph->setIdepthZero(ph->idepth);
+        ph->hasDepthPrior = true;
+        ph->setPointStatus(PointHessian::ACTIVE);
+        ph->pointIndex = ptIdx;
         ptIdx++;
         firstFrame->pointHessians.push_back(ph);
-        ef.insertPoint(&firstFrame->pointHessians.back(), firstFrame->trackingID);
+        ef.insertPoint(firstFrame->pointHessians.back());
     }
 
     SE3 firstToNew = info.thisToNext;
     firstToNew.translation() /= rescaleFactor;
     frameHessians.emplace_back(firstFrame);
 
-    VO::FramePose pose;
-    pose.frameToWorld = SE3();
-    pose.affLightg2l = AffLight(0, 0);
-    pose.frameToTrackingRef = SE3();
-    pose.setEvalPT_scaled(pose.frameToWorld, pose.affLightg2l);
-    pose.abExposure = firstFrame->abExposure;
-    pose.trackingID = firstFrame->trackingID;
-    firstFrame->pose = pose;
+    firstFrame->pose->frameToWorld = SE3();
+    firstFrame->pose->affLightg2l = AffLight(0, 0);
+    firstFrame->pose->frameToTrackingRef = SE3();
+    firstFrame->pose->setEvalPT_scaled(firstFrame->pose->frameToWorld, firstFrame->pose->affLightg2l);
+    firstFrame->pose->abExposure = firstFrame->abExposure;
+    firstFrame->pose->trackingID = firstFrame->trackingID;
 
 
-    VO::FramePose pose2;
-    pose2.frameToWorld = firstToNew.inverse();
-    pose2.affLightg2l = AffLight(0, 0);
-    pose2.frameToTrackingRef = firstToNew.inverse();
-    pose2.setEvalPT_scaled(pose2.frameToWorld, pose2.affLightg2l);
-    pose2.abExposure = secondFrame->abExposure;
-    pose2.trackingID = 1;
-    secondFrame->pose = pose2;
-
+    secondFrame->pose->frameToWorld = firstToNew.inverse();
+    secondFrame->pose->affLightg2l = AffLight(0, 0);
+    secondFrame->pose->frameToTrackingRef = firstToNew.inverse();
+    secondFrame->pose->setEvalPT_scaled(secondFrame->pose->frameToWorld, secondFrame->pose->affLightg2l);
+    secondFrame->pose->abExposure = secondFrame->abExposure;
+    secondFrame->pose->trackingID = 1;
+    secondFrame->trackingRef = firstFrame->pose;
     setPrecalcValues();
 
     initialized = true;
@@ -83,6 +82,8 @@ bool Tracker::initializerTrackFrame(const std::shared_ptr<VO::Frame> &frame, con
     secondFrame = frame;
     // frame->displayPyramid(0, false, "frame");
     //firstFrame->displayPyramid(0,true, "firstFrame");
+    allFrameHistory.push_back(frame->pose);
+
 
     info.JbBuffer.resize(frame->width * frame->height);
     info.JbBuffer_new.resize(frame->width * frame->height);
@@ -259,7 +260,7 @@ bool Tracker::initializerTrackFrame(const std::shared_ptr<VO::Frame> &frame, con
     return info.snapped && info.frameID > info.snappedAtFrame + 5;
 }
 
-void Tracker::takeTrackedFrame(std::shared_ptr<VO::Frame> frame, bool needKF) {
+void Tracker::takeTrackedFrame(const std::shared_ptr<VO::Frame> &frame, bool needKF) {
     if (needKF) {
         makeKeyFrame(frame);
     } else {
@@ -270,8 +271,8 @@ void Tracker::takeTrackedFrame(std::shared_ptr<VO::Frame> frame, bool needKF) {
 void Tracker::makeKeyFrame(std::shared_ptr<VO::Frame> frame) {
     // =========================== UPDATE POSE =========================
 
-    frame->pose.frameToWorld = frame->trackingRef.frameToWorld * frame->pose.frameToTrackingRef;
-    frame->pose.setEvalPT_scaled(frame->pose.frameToWorld.inverse(), frame->pose.affLightg2l);
+    frame->pose->frameToWorld = frame->trackingRef->frameToWorld * frame->pose->frameToTrackingRef;
+    frame->pose->setEvalPT_scaled(frame->pose->frameToWorld.inverse(), frame->pose->affLightg2l);
     // traceNewCoarse
     Log::Logger::getInstance()->info("Tracing new coarse");
     traceNewCoarse(frame);
@@ -282,28 +283,25 @@ void Tracker::makeKeyFrame(std::shared_ptr<VO::Frame> frame) {
 
 
     frame->trackingID = frameHessians.size();
-    frame->pose.trackingID = frame->trackingID;
+    frame->pose->trackingID = frame->trackingID;
     frameHessians.emplace_back(frame);
-    allKeyFramesHistory.emplace_back(&frame->pose);
+    allKeyFramesHistory.emplace_back(frame->pose);
     ef.insertFrame(frame, &hCalib);
     setPrecalcValues();
 
     // =========================== add new residuals for old points =========================
     for (auto &fh1: frameHessians) {
         if (fh1 == frame) continue;
-        for (auto &ph: fh1->pointHessians) {
-            PointFrameResidual r(ph.pointIndex);
-            r.host = fh1.get();
-            r.target = frame.get();
-            r.pointH = &ph;
-            r.setState(ResState::IN);
-            ph.residuals.push_back(r);
-            ef.insertResidual(&ph.residuals.back(), fh1->trackingID, frame->trackingID);
-
-            ph.lastResiduals[1] = ph.lastResiduals[0];
-            ph.lastResiduals[0] = std::pair<PointFrameResidual *, ResState>(&ph.residuals.back(), ResState::IN);
+        for (PointHessian *ph: fh1->pointHessians) {
+            PointFrameResidual *r = new PointFrameResidual(ph, fh1.get(), frame.get());
+            r->setState(ResState::IN);
+            ph->residuals.push_back(r);
+            ef.insertResidual(r);
+            ph->lastResiduals[1] = ph->lastResiduals[0];
+            ph->lastResiduals[0] = std::pair<PointFrameResidual *, ResState>(r, ResState::IN);
         }
     }
+
 
     // =========================== Activate Points (& flag for marginalization). =========================
     activatePointsMT();
@@ -315,54 +313,371 @@ void Tracker::makeKeyFrame(std::shared_ptr<VO::Frame> frame) {
     Log::Logger::getInstance()->info("RMSE: {}", rmse);
 
     // =========================== Figure Out if INITIALIZATION FAILED =========================
-    if(allKeyFramesHistory.size() <= 4)
-    {
-        if(allKeyFramesHistory.size()==2 && rmse > 20*benchmark_initializerSlackFactor)
-        {
-            printf("I THINK INITIALIZATINO FAILED! Resetting.\n");
+    if (allKeyFramesHistory.size() <= 4) {
+        if (allKeyFramesHistory.size() == 2 && rmse > 20 * benchmark_initializerSlackFactor) {
+            Log::Logger::getInstance()->info("I THINK INITIALIZATION FAILED! Resetting");
+            initialized = false;
             return;
-            //initialized =false;
         }
-        if(allKeyFramesHistory.size()==3 && rmse > 13*benchmark_initializerSlackFactor)
-        {
-            printf("I THINK INITIALIZATINO FAILED! Resetting.\n");
+        if (allKeyFramesHistory.size() == 3 && rmse > 13 * benchmark_initializerSlackFactor) {
+            Log::Logger::getInstance()->info("I THINK INITIALIZATION FAILED! Resetting");
+            initialized = false;
             return;
-            //initialized=false;
         }
-        if(allKeyFramesHistory.size()==4 && rmse > 9*benchmark_initializerSlackFactor)
-        {
-            printf("I THINK INITIALIZATINO FAILED! Resetting.\n");
+        if (allKeyFramesHistory.size() == 4 && rmse > 9 * benchmark_initializerSlackFactor) {
+            Log::Logger::getInstance()->info("I THINK INITIALIZATION FAILED! Resetting");
+            initialized = false;
             return;
-            //initialized=false;
         }
     }
 
     // =========================== REMOVE OUTLIER =========================
+    removeOutliers();
+
+    coarseTracker_forNewKF->makeK(&hCalib, calibration);
+    coarseTracker_forNewKF->setCoarseTrackingRef(frameHessians);
     // =========================== (Activate-)Marginalize Points =========================
+    flagPointsForRemoval();
+    ef.dropPointsF();
+    getNullspaces(
+            ef.lastNullspaces_pose,
+            ef.lastNullspaces_scale,
+            ef.lastNullspaces_affA,
+            ef.lastNullspaces_affB);
+    ef.marginalizePointsF();
+
     // =========================== add new Immature points & new residuals =========================
+    Log::Logger::getInstance()->info("Making new traces on frame obj: {}", reinterpret_cast<void *>(frame.get()));
+    makeNewTraces(frame, 0);
+
     // =========================== Marginalize Frames =========================
-/*
-    for (auto &host: frameHessians) {
-        cv::Mat img(calibration->hG[0], calibration->wG[0], CV_32FC3, host->pyramid[0].data());
-        img.convertTo(img, CV_8UC3);
-
-        std::cout << "pointHessianss: " << host->pointHessians.size() << std::endl;
-        for (PointHessian &ph: host->pointHessians) {
-            cv::circle(img, cv::Point2f(ph.u, ph.v), 1,
-                       cv::Scalar(0, 0, 255));
-
+    for (unsigned int i = 0; i < frameHessians.size(); i++)
+        if (frameHessians[i]->flaggedForMarginalization) {
+            marginalizeFrame(frameHessians[i].get());
+            i = 0;
         }
-
-        cv::imshow("PointHessian Activated: " + std::to_string(host->trackingID), img);
-    }
-    cv::waitKey(0);
-*/
 }
 
 
 void Tracker::makeNonKeyFrame(std::shared_ptr<VO::Frame> frame) {
     // =========================== UPDATE POSE =========================
+    // needs to be set by mapping thread. no lock required since we are in mapping thread.
+    {
+        assert(fh->shell->trackingRef != 0);
+        frame->pose->frameToWorld = frame->trackingRef->frameToWorld * frame->pose->frameToTrackingRef;
+        frame->pose->setEvalPT_scaled(frame->pose->frameToWorld.inverse(), frame->pose->aff_g2l());
+    }
 
+    traceNewCoarse(frame);
+}
+
+
+void Tracker::marginalizeFrame(VO::Frame *frame) {
+    // marginalize or remove all this frames points.
+
+    assert((int) frame->pointHessians.size() == 0);
+
+
+    ef.marginalizeFrame(frame->efFrame);
+
+    // drop all observations of existing points in that frame.
+
+    for (auto &fh: frameHessians) {
+        if (fh.get() == frame) continue;
+
+        for (PointHessian *ph: fh->pointHessians) {
+            for (unsigned int i = 0; i < ph->residuals.size(); i++) {
+                PointFrameResidual *r = ph->residuals[i];
+                if (r->target == frame) {
+                    if (ph->lastResiduals[0].first == r)
+                        ph->lastResiduals[0].first = 0;
+                    else if (ph->lastResiduals[1].first == r)
+                        ph->lastResiduals[1].first = 0;
+
+
+                    ef.dropResidual(r->efResidual);
+                    deleteOut<PointFrameResidual>(ph->residuals, i);
+                    break;
+                }
+            }
+        }
+    }
+
+
+    std::vector<VO::Frame *> v;
+    v.push_back(frame);
+    {
+
+        // for(IOWrap::Output3DWrapper* ow : outputWrapper)
+        //     ow->publishKeyframes(v, true, &Hcalib);
+    }
+
+
+    frame->pose->marginalizedAt = frameHessians.back()->pose->trackingID;
+    frame->pose->movedByOpt = frame->pose->w2c_leftEps().norm();
+
+    for(int i = 0; auto& f : frameHessians){
+        if (f.get() == frame){
+            frameHessians.erase(frameHessians.begin() + i);
+        }
+        i++;
+    }
+    for (unsigned int i = 0; i < frameHessians.size(); i++)
+        frameHessians[i]->trackingID = i;
+
+
+    setPrecalcValues();
+    ef.setAdjointsF(&hCalib);
+}
+
+void Tracker::makeNewTraces(std::shared_ptr<VO::Frame> newFrame, float *gtDepth) {
+    //int numPointsTotal = makePixelStatus(newFrame->dI, selectionMap, wG[0], hG[0], setting_desiredDensity);
+    int numPointsTotal = pixelSelector->makeMaps(newFrame.get(), selectionMap, setting_desiredImmatureDensity);
+
+    newFrame->pointHessians.reserve(numPointsTotal * 1.2f);
+    //fh->pointHessiansInactive.reserve(numPointsTotal*1.2f);
+    newFrame->pointHessiansMarginalized.reserve(numPointsTotal * 1.2f);
+    newFrame->pointHessiansOut.reserve(numPointsTotal * 1.2f);
+
+    std::shared_ptr <VO::Frame> newFrameShared(newFrame);
+
+    for (int y = patternPadding + 1; y < calibration->hG[0] - patternPadding - 2; y++)
+        for (int x = patternPadding + 1; x < calibration->wG[0] - patternPadding - 2; x++) {
+            int i = x + y * calibration->wG[0];
+            if (selectionMap[i] == 0) continue;
+
+            ImmaturePoint *impt = new ImmaturePoint(x, y, selectionMap[i], newFrameShared);
+            if (!std::isfinite(impt->energyTH)) delete impt;
+            else newFrame->immaturePoints.push_back(impt);
+
+        }
+    //printf("MADE %d IMMATURE POINTS!\n", (int)newFrame->immaturePoints.size());
+
+}
+
+
+Vec4 Tracker::trackNewCoarse(std::shared_ptr<VO::Frame> fh) {
+
+    assert(allFrameHistory.size() > 0);
+    // set pose initialization.
+
+    //for(IOWrap::Output3DWrapper* ow : outputWrapper)
+    //    ow->pushLiveFrame(fh);
+
+
+
+    VO::Frame *lastF = coarseTracker->lastRef.get();
+
+    AffLight aff_last_2_l = AffLight(0, 0);
+
+    std::vector<SE3, Eigen::aligned_allocator<SE3>> lastF_2_fh_tries;
+    if (allFrameHistory.size() == 2)
+        for (unsigned int i = 0; i < lastF_2_fh_tries.size(); i++) lastF_2_fh_tries.push_back(SE3());
+    else {
+        auto &slast = allFrameHistory[allFrameHistory.size() - 2];
+        auto &sprelast = allFrameHistory[allFrameHistory.size() - 3];
+        SE3 slast_2_sprelast;
+        SE3 lastF_2_slast;
+        {    // lock on global pose consistency!
+            slast_2_sprelast = sprelast->frameToWorld.inverse() * slast->frameToWorld;
+            lastF_2_slast = slast->frameToWorld.inverse() * lastF->pose->frameToWorld;
+            aff_last_2_l = slast->aff_g2l();
+        }
+        SE3 fh_2_slast = slast_2_sprelast;// assumed to be the same as fh_2_slast.
+
+
+        // get last delta-movement.
+        lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast);    // assume constant motion.
+        lastF_2_fh_tries.push_back(
+                fh_2_slast.inverse() * fh_2_slast.inverse() * lastF_2_slast);    // assume double motion (frame skipped)
+        lastF_2_fh_tries.push_back(SE3::exp(fh_2_slast.log() * 0.5).inverse() * lastF_2_slast); // assume half motion.
+        lastF_2_fh_tries.push_back(lastF_2_slast); // assume zero motion.
+        lastF_2_fh_tries.push_back(SE3()); // assume zero motion FROM KF.
+
+
+        // just try a TON of different initializations (all rotations). In the end,
+        // if they don't work they will only be tried on the coarsest level, which is super fast anyway.
+        // also, if tracking rails here we loose, so we really, really want to avoid that.
+        for (float rotDelta = 0.02; rotDelta < 0.05; rotDelta++) {
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, rotDelta, 0, 0),
+                                           Vec3(0, 0, 0)));            // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, 0, rotDelta, 0),
+                                           Vec3(0, 0, 0)));            // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, 0, 0, rotDelta),
+                                           Vec3(0, 0, 0)));            // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, -rotDelta, 0, 0),
+                                           Vec3(0, 0, 0)));            // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, 0, -rotDelta, 0),
+                                           Vec3(0, 0, 0)));            // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, 0, 0, -rotDelta),
+                                           Vec3(0, 0, 0)));            // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, rotDelta, rotDelta, 0),
+                                           Vec3(0, 0, 0)));    // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, 0, rotDelta, rotDelta),
+                                           Vec3(0, 0, 0)));    // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, rotDelta, 0, rotDelta),
+                                           Vec3(0, 0, 0)));    // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, -rotDelta, rotDelta, 0),
+                                           Vec3(0, 0, 0)));    // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, 0, -rotDelta, rotDelta),
+                                           Vec3(0, 0, 0)));    // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, -rotDelta, 0, rotDelta),
+                                           Vec3(0, 0, 0)));    // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, rotDelta, -rotDelta, 0),
+                                           Vec3(0, 0, 0)));    // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, 0, rotDelta, -rotDelta),
+                                           Vec3(0, 0, 0)));    // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, rotDelta, 0, -rotDelta),
+                                           Vec3(0, 0, 0)));    // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, -rotDelta, -rotDelta, 0),
+                                           Vec3(0, 0, 0)));    // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, 0, -rotDelta, -rotDelta),
+                                           Vec3(0, 0, 0)));    // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, -rotDelta, 0, -rotDelta),
+                                           Vec3(0, 0, 0)));    // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, -rotDelta, -rotDelta, -rotDelta),
+                                           Vec3(0, 0, 0)));    // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, -rotDelta, -rotDelta, rotDelta),
+                                           Vec3(0, 0, 0)));    // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, -rotDelta, rotDelta, -rotDelta),
+                                           Vec3(0, 0, 0)));    // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, -rotDelta, rotDelta, rotDelta),
+                                           Vec3(0, 0, 0)));    // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, rotDelta, -rotDelta, -rotDelta),
+                                           Vec3(0, 0, 0)));    // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, rotDelta, -rotDelta, rotDelta),
+                                           Vec3(0, 0, 0)));    // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, rotDelta, rotDelta, -rotDelta),
+                                           Vec3(0, 0, 0)));    // assume constant motion.
+            lastF_2_fh_tries.push_back(fh_2_slast.inverse() * lastF_2_slast *
+                                       SE3(Eigen::Quaternion<double>(1, rotDelta, rotDelta, rotDelta),
+                                           Vec3(0, 0, 0)));    // assume constant motion.
+        }
+
+        if (!slast->poseValid || !sprelast->poseValid || !lastF->pose->poseValid) {
+            lastF_2_fh_tries.clear();
+            lastF_2_fh_tries.push_back(SE3());
+        }
+    }
+
+
+    Vec3 flowVecs = Vec3(100, 100, 100);
+    SE3 lastF_2_fh = SE3();
+    AffLight aff_g2l = AffLight(0, 0);
+
+
+    // as long as maxResForImmediateAccept is not reached, I'll continue through the options.
+    // I'll keep track of the so-far best achieved residual for each level in achievedRes.
+    // If on a coarse level, tracking is WORSE than achievedRes, we will not continue to save time.
+
+
+    Vec5 achievedRes = Vec5::Constant(NAN);
+    bool haveOneGood = false;
+    bool trackingIsGood = false;
+    int tryIterations = 0;
+    for (unsigned int i = 0; i < lastF_2_fh_tries.size(); i++) {
+        AffLight aff_g2l_this = aff_last_2_l;
+        SE3 lastF_2_fh_this = lastF_2_fh_tries[i];
+        trackingIsGood = coarseTracker->trackNewestCoarse(
+                fh, lastF_2_fh_this, aff_g2l_this,
+                calibration->pyrLevelsUsed - 1,
+                achievedRes);    // in each level has to be at least as good as the last try.
+        tryIterations++;
+
+        if (i != 0) {
+            printf("RE-TRACK ATTEMPT %d with initOption %d and start-lvl %d (ab %f %f): %f %f %f %f %f -> %f %f %f %f %f \n",
+                   i,
+                   i, calibration->pyrLevelsUsed - 1,
+                   aff_g2l_this.a, aff_g2l_this.b,
+                   achievedRes[0],
+                   achievedRes[1],
+                   achievedRes[2],
+                   achievedRes[3],
+                   achievedRes[4],
+                   coarseTracker->lastResiduals[0],
+                   coarseTracker->lastResiduals[1],
+                   coarseTracker->lastResiduals[2],
+                   coarseTracker->lastResiduals[3],
+                   coarseTracker->lastResiduals[4]);
+        }
+
+
+        // do we have a new winner?
+        Log::Logger::getInstance()->info("Tracking. is good? {} Last Residual: {} achievedRes {}", trackingIsGood,
+                                         coarseTracker->lastResiduals[0], achievedRes[0]);
+        if (trackingIsGood && std::isfinite((float) coarseTracker->lastResiduals[0]) &&
+            !(coarseTracker->lastResiduals[0] >= achievedRes[0])) {
+            //printf("take over. minRes %f -> %f!\n", achievedRes[0], coarseTracker->lastResiduals[0]);
+            flowVecs = coarseTracker->lastFlowIndicators;
+            aff_g2l = aff_g2l_this;
+            lastF_2_fh = lastF_2_fh_this;
+            haveOneGood = true;
+        }
+
+        // take over achieved res (always).
+        if (haveOneGood) {
+            for (int i = 0; i < 5; i++) {
+                if (!std::isfinite((float) achievedRes[i]) || achievedRes[i] >
+                                                              coarseTracker->lastResiduals[i])    // take over if achievedRes is either bigger or NAN.
+                    achievedRes[i] = coarseTracker->lastResiduals[i];
+            }
+        }
+
+
+        if (haveOneGood && achievedRes[0] < lastCoarseRMSE[0] * setting_reTrackThreshold)
+            break;
+
+    }
+
+    if (!haveOneGood) {
+        printf("BIG ERROR! tracking failed entirely. Take predictred pose and hope we may somehow recover.\n");
+        flowVecs = Vec3(0, 0, 0);
+        aff_g2l = aff_last_2_l;
+        lastF_2_fh = lastF_2_fh_tries[0];
+    }
+
+    lastCoarseRMSE = achievedRes;
+
+    // no lock required, as fh is not used anywhere yet.
+    fh->pose->frameToTrackingRef = lastF_2_fh.inverse();
+    fh->trackingRef = lastF->pose;
+    fh->pose->aff_g2l() = aff_g2l;
+    fh->pose->frameToWorld = fh->trackingRef->frameToWorld * fh->pose->frameToTrackingRef;
+
+
+    if (coarseTracker->firstCoarseRMSE < 0)
+        coarseTracker->firstCoarseRMSE = achievedRes[0];
+
+
+    Log::Logger::getInstance()->info("Coarse Tracker tracked ab =  {}  {} (exp  {}). Res  {}!", aff_g2l.a, aff_g2l.b, fh->abExposure, achievedRes[0]);
+
+
+    return Vec4(achievedRes[0], flowVecs[0], flowVecs[1], flowVecs[2]);
 }
 
 void Tracker::traceNewCoarse(std::shared_ptr<VO::Frame> frame) {
@@ -373,26 +688,26 @@ void Tracker::traceNewCoarse(std::shared_ptr<VO::Frame> frame) {
     K(0, 2) = hCalib.cxl();
     K(1, 2) = hCalib.cyl();
 
-    for (size_t i = 0; i < frameHessians.size(); ++i) {
-        SE3 newPose = frameHessians[i]->pose.PRE_worldToCam * frameHessians[i]->pose.PRE_camToWorld;
-        Mat33f KRKi = K * newPose.rotationMatrix().cast<float>() * K.inverse();
-        Vec3f Kt = K * newPose.translation().cast<float>();
-        Vec2f aff = AffLight::fromToVecExposure(frameHessians[i]->abExposure, frame->abExposure,
-                                                frameHessians[i]->pose.aff_g2l(),
-                                                frameHessians[frame->trackingID]->pose.aff_g2l()).cast<float>();
+    for (auto &host: frameHessians)        // go through all active frames
+    {
 
-        Log::Logger::getInstance()->info("Tracking frame {} --> {}", frameHessians[i]->trackingID, frame->trackingID);
-        if (i >= immaturePoints.size())
-            continue;
-        for (auto &ip: immaturePoints[i]) {
-            Log::Logger::getInstance()->info("Tracing points in frame {}", i);
-            ip.traceOn(frame, KRKi, Kt, aff, &hCalib, calibration);
-            if (ip.lastTraceStatus == ImmaturePointStatus::IPS_GOOD) trace_good++;
-            if (ip.lastTraceStatus == ImmaturePointStatus::IPS_BADCONDITION) trace_badcondition++;
-            if (ip.lastTraceStatus == ImmaturePointStatus::IPS_OOB) trace_oob++;
-            if (ip.lastTraceStatus == ImmaturePointStatus::IPS_OUTLIER) trace_out++;
-            if (ip.lastTraceStatus == ImmaturePointStatus::IPS_SKIPPED) trace_skip++;
-            if (ip.lastTraceStatus == ImmaturePointStatus::IPS_UNINITIALIZED) trace_uninitialized++;
+        SE3 hostToNew = frame->pose->PRE_worldToCam * host->pose->PRE_camToWorld;
+        Mat33f KRKi = K * hostToNew.rotationMatrix().cast<float>() * K.inverse();
+        Vec3f Kt = K * hostToNew.translation().cast<float>();
+
+        Vec2f aff = AffLight::fromToVecExposure(host->pose->abExposure, frame->pose->abExposure, host->pose->aff_g2l(),
+                                                frame->pose->aff_g2l()).cast<float>();
+
+       Log::Logger::getInstance()->info("Tracing points id: {}, tracking id: {}, Immature points: {} ", host->id, host->trackingID,  host->immaturePoints.size());
+
+        for (ImmaturePoint *ph: host->immaturePoints) {
+            ph->traceOn(frame, KRKi, Kt, aff, &hCalib, calibration, true);
+            if (ph->lastTraceStatus == ImmaturePointStatus::IPS_GOOD) trace_good++;
+            if (ph->lastTraceStatus == ImmaturePointStatus::IPS_BADCONDITION) trace_badcondition++;
+            if (ph->lastTraceStatus == ImmaturePointStatus::IPS_OOB) trace_oob++;
+            if (ph->lastTraceStatus == ImmaturePointStatus::IPS_OUTLIER) trace_out++;
+            if (ph->lastTraceStatus == ImmaturePointStatus::IPS_SKIPPED) trace_skip++;
+            if (ph->lastTraceStatus == ImmaturePointStatus::IPS_UNINITIALIZED) trace_uninitialized++;
             trace_total++;
         }
     }
@@ -415,12 +730,12 @@ void Tracker::flagFramesForMarginalization(std::shared_ptr<VO::Frame> sharedPtr)
     for (int i = 0; i < (int) frameHessians.size(); i++) {
         std::shared_ptr<VO::Frame> fh = frameHessians[i];
 
-        size_t in = fh->pointHessians.size() + immaturePoints[fh->trackingID].size();
+        int in = fh->pointHessians.size() + fh->immaturePoints.size();
         size_t out = fh->pointHessiansMarginalized.size() + fh->pointHessiansOut.size();
 
         Vec2 refToFh = AffLight::fromToVecExposure(frameHessians.back()->abExposure, fh->abExposure,
-                                                   frameHessians.back()->pose.aff_g2l(),
-                                                   frameHessians[i]->pose.aff_g2l());
+                                                   frameHessians.back()->pose->aff_g2l(),
+                                                   frameHessians[i]->pose->aff_g2l());
 
 
         if ((in < setting_minPointsRemaining * (in + out) ||
@@ -458,9 +773,11 @@ void Tracker::flagFramesForMarginalization(std::shared_ptr<VO::Frame> sharedPtr)
             //if(fh==frameHessians.front() == 0) continue;
 
             double distScore = 0;
-            for(VO::FrameToFramePrecalc ffh : fh->targetPrecalc){
+            for (VO::FrameToFramePrecalc ffh: fh->targetPrecalc) {
                 // TODO check if I'm using correct id and check frameToFramePrecalc is correct Correct IF statements?
-                if (ffh.hostTrackingID > latest->trackingID - setting_minFrameAge + 1 || ffh.hostTrackingID == fh->trackingID) continue;
+                if (ffh.hostTrackingID > latest->trackingID - setting_minFrameAge + 1 ||
+                    ffh.hostTrackingID == fh->trackingID)
+                    continue;
                 distScore += 1 / (1e-5 + ffh.distanceLL);
 
             }
@@ -513,59 +830,57 @@ void Tracker::activatePointsMT() {
                                      currentMinActDist, (int) (setting_desiredPointDensity), ef.nPoints);
 
 
-    std::shared_ptr<VO::Frame> latestFrame = frameHessians.back();
+    std::shared_ptr<VO::Frame> newestHs = frameHessians.back();
 
     // make dist map.
     coarseDistanceMap.makeK(&hCalib);
-    coarseDistanceMap.makeDistanceMap(frameHessians, latestFrame);
+    coarseDistanceMap.makeDistanceMap(frameHessians, newestHs);
 
     //coarseTracker->debugPlotDistMap("distMap");
 
-    std::vector<ImmaturePoint> toOptimize;
+    std::vector<ImmaturePoint *> toOptimize;
     toOptimize.reserve(20000);
 
 
-    for (size_t i = 0; i < frameHessians.size(); ++i)        // go through all active frames
+    for (auto &host: frameHessians)        // go through all active frames
     {
-        if (frameHessians[i] == latestFrame) continue;
+        if (host == newestHs) continue;
 
-        SE3 fhToNew = latestFrame->pose.PRE_worldToCam * frameHessians[i]->pose.PRE_camToWorld;
+        SE3 fhToNew = newestHs->pose->PRE_worldToCam * host->pose->PRE_camToWorld;
         Mat33f KRKi = (coarseDistanceMap.K[1] * fhToNew.rotationMatrix().cast<float>() * coarseDistanceMap.Ki[0]);
         Vec3f Kt = (coarseDistanceMap.K[1] * fhToNew.translation().cast<float>());
 
 
-        for (unsigned int j = 0; j < immaturePoints[i].size(); j += 1) {
-            ImmaturePoint &ph = immaturePoints[i][j];
-            ph.idxInImmaturePoints = j;
+        for (unsigned int i = 0; i < host->immaturePoints.size(); i += 1) {
+            ImmaturePoint *ph = host->immaturePoints[i];
+            ph->idxInImmaturePoints = i;
 
             // delete points that have never been traced successfully, or that are outlier on the last trace.
-            if (!std::isfinite(ph.idepth_max) || ph.lastTraceStatus == IPS_OUTLIER) {
+            if (!std::isfinite(ph->idepth_max) || ph->lastTraceStatus == IPS_OUTLIER) {
 //				immature_invalid_deleted++;
                 // remove point.
-                auto it = immaturePoints[i].begin();
-                std::advance(it, j);
-                immaturePoints[i].erase(it);
+                delete ph;
+                host->immaturePoints[i] = 0;
                 continue;
             }
 
             // can activate only if this is true.
-            bool canActivate = (ph.lastTraceStatus == IPS_GOOD
-                                || ph.lastTraceStatus == IPS_SKIPPED
-                                || ph.lastTraceStatus == IPS_BADCONDITION
-                                || ph.lastTraceStatus == IPS_OOB)
-                               && ph.lastTracePixelInterval < 8
-                               && ph.quality > setting_minTraceQuality
-                               && (ph.idepth_max + ph.idepth_min) > 0;
+            bool canActivate = (ph->lastTraceStatus == IPS_GOOD
+                                || ph->lastTraceStatus == IPS_SKIPPED
+                                || ph->lastTraceStatus == IPS_BADCONDITION
+                                || ph->lastTraceStatus == IPS_OOB)
+                               && ph->lastTracePixelInterval < 8
+                               && ph->quality > setting_minTraceQuality
+                               && (ph->idepth_max + ph->idepth_min) > 0;
 
 
             // if I cannot activate the point, skip it. Maybe also delete it.
             if (!canActivate) {
                 // if point will be out afterwards, delete it instead.
-                if (ph.host->flaggedForMarginalization || ph.lastTraceStatus == IPS_OOB) {
+                if (ph->host->flaggedForMarginalization || ph->lastTraceStatus == IPS_OOB) {
 //					immature_notReady_deleted++;
-                    auto it = immaturePoints[i].begin();
-                    std::advance(it, j);
-                    immaturePoints[i].erase(it);
+                    delete ph;
+                    host->immaturePoints[i] = 0;
                 }
 //				immature_notReady_skipped++;
                 continue;
@@ -573,7 +888,7 @@ void Tracker::activatePointsMT() {
 
 
             // see if we need to activate point due to distance map.
-            Vec3f ptp = KRKi * Vec3f(ph.u, ph.v, 1) + Kt * (0.5f * (ph.idepth_max + ph.idepth_min));
+            Vec3f ptp = KRKi * Vec3f(ph->u, ph->v, 1) + Kt * (0.5f * (ph->idepth_max + ph->idepth_min));
             int u = ptp[0] / ptp[2] + 0.5f;
             int v = ptp[1] / ptp[2] + 0.5f;
 
@@ -582,14 +897,13 @@ void Tracker::activatePointsMT() {
                 float dist = coarseDistanceMap.fwdWarpedIDDistFinal[u + calibration->wG[1] * v] +
                              (ptp[0] - floorf((float) (ptp[0])));
 
-                if (dist >= currentMinActDist * ph.type) {
+                if (dist >= currentMinActDist * ph->my_type) {
                     coarseDistanceMap.addIntoDistFinal(u, v);
                     toOptimize.push_back(ph);
                 }
             } else {
-                auto it = immaturePoints[i].begin();
-                std::advance(it, j);
-                immaturePoints[i].erase(it);
+                delete ph;
+                host->immaturePoints[i] = 0;
             }
         }
     }
@@ -598,114 +912,95 @@ void Tracker::activatePointsMT() {
 //	printf("ACTIVATE: %d. (del %d, notReady %d, marg %d, good %d, marg-skip %d)\n",
 //			(int)toOptimize.size(), immature_deleted, immature_notReady, immature_needMarg, immature_want, immature_margskip);
 
-    std::vector<PointHessian> optimized;
+    std::vector<PointHessian *> optimized;
     optimized.resize(toOptimize.size());
+
 
     activatePointsMT_Reductor(&optimized, &toOptimize, 0, toOptimize.size(), 0, 0);
 
     Log::Logger::getInstance()->info("Points to optimize: {}", toOptimize.size());
 
     for (unsigned k = 0; k < toOptimize.size(); k++) {
-        PointHessian &newpoint = optimized[k];
-        ImmaturePoint &ph = toOptimize[k];
+        PointHessian *newpoint = optimized[k];
+        ImmaturePoint *ph = toOptimize[k];
 
-        if (newpoint.isGood()) {
-
-            //newpoint->host->immaturePoints[ph.idxInImmaturePoints]=0;
-            //newpoint->host->pointHessians.push_back(newpoint);
-
-            //ef.insertPoint(newpoint);
-            for (PointFrameResidual &r: newpoint.residuals)
-                ef.insertResidual(&r, 0, 0);
-            //assert(newpoint.efPoint != 0);
-
-            auto it = toOptimize.begin();
-            std::advance(it, k);
-            toOptimize.erase(it);
-        } else if (ph.lastTraceStatus == IPS_OOB) {
-            auto it = toOptimize.begin();
-            std::advance(it, k);
-            toOptimize.erase(it);
-
-            it = immaturePoints[k].begin();
-            std::advance(it, ph.idxInImmaturePoints);
-            immaturePoints[k].erase(it);
+        if (newpoint != 0 && newpoint != (PointHessian *) ((long) (-1))) {
+            newpoint->host->immaturePoints[ph->idxInImmaturePoints] = 0;
+            newpoint->host->pointHessians.push_back(newpoint);
+            ef.insertPoint(newpoint);
+            for (PointFrameResidual *r: newpoint->residuals)
+                ef.insertResidual(r);
+            assert(newpoint->efPoint != 0);
+            delete ph;
+        } else if (newpoint == (PointHessian *) ((long) (-1)) || ph->lastTraceStatus == IPS_OOB) {
+            delete ph;
+            ph->host->immaturePoints[ph->idxInImmaturePoints] = 0;
         } else {
-            //assert(newpoint == 0 || newpoint == (PointHessian *) ((long) (-1)));
+            assert(newpoint == 0 || newpoint == (PointHessian *) ((long) (-1)));
         }
-
     }
 
-
-    for (int i = 0; i < immaturePoints.size(); ++i) {
-        for (int j = 0; i < immaturePoints[i].size(); ++j) {
-            if (immaturePoints[i][j].remove) {
-                auto it = immaturePoints[i].begin();
-                std::advance(it, j);
-                immaturePoints[i].erase(it);
+    for (auto &host: frameHessians) {
+        //std::cout << "activated pointHessians size: " <<  host->pointHessians.size() << std::endl;
+        for (int i = 0; i < (int) host->immaturePoints.size(); i++) {
+            if (host->immaturePoints[i] == 0) {
+                host->immaturePoints[i] = host->immaturePoints.back();
+                host->immaturePoints.pop_back();
+                i--;
             }
         }
     }
 }
 
 void Tracker::setPrecalcValues() {
-    int size = frameHessians.size();
-    for (const auto& fh: frameHessians) {
+    for (auto &fh: frameHessians) {
+        fh->targetPrecalc.resize(frameHessians.size());
 
-        fh->targetPrecalc.resize(size);
-        for(unsigned int i=0;i<size;i++) {
-            fh->targetPrecalc[i].set(fh->pose, frameHessians[i]->pose, hCalib.fxl(), hCalib.fyl(), hCalib.cxl(),hCalib.cyl(), fh->trackingID, frameHessians[i]->trackingID);
-        }
+        for (unsigned int i = 0; i < frameHessians.size(); i++)
+            fh->targetPrecalc[i].set(fh.get(), frameHessians[i].get(), &hCalib);
     }
-    for (int i = 0; i < frameHessians.size(); ++i){
-        for (int j = 0; j < frameHessians[i]->pointHessians.size(); ++j){
-            ef.eFrames[i].points[j].data = &frameHessians[i]->pointHessians[j];
-        }
-    }
+
     ef.setDeltaF(&hCalib);
 }
 
 
 void Tracker::activatePointsMT_Reductor(
-        std::vector<PointHessian> *optimized,
-        std::vector<ImmaturePoint> *toOptimize,
+        std::vector<PointHessian *> *optimized,
+        std::vector<ImmaturePoint *> *toOptimize,
         int min, int max, Vec10 *stats, int tid) {
     ImmaturePointTemporaryResidual *tr = new ImmaturePointTemporaryResidual[frameHessians.size()];
     for (int k = min; k < max; k++) {
-        optimizeImmaturePoint(&(*toOptimize)[k], 1, tr, &(*optimized)[k]);
+        (*optimized)[k] = optimizeImmaturePoint((*toOptimize)[k], 1, tr);
     }
     delete[] tr;
 }
 
-void Tracker::optimizeImmaturePoint(ImmaturePoint *point, int minObs, ImmaturePointTemporaryResidual *residuals,
-                                    PointHessian *phOut) {
+PointHessian *Tracker::optimizeImmaturePoint(
+        ImmaturePoint *point, int minObs,
+        ImmaturePointTemporaryResidual *residuals) {
     int nres = 0;
-    std::vector<std::shared_ptr<VO::Frame>> targetFrames;
-
     for (auto &fh: frameHessians) {
-        if (fh != point->host) {
+        if (fh.get() != point->host) {
             residuals[nres].state_NewEnergy = residuals[nres].state_energy = 0;
             residuals[nres].state_NewState = ResState::OUTLIER;
             residuals[nres].state_state = ResState::IN;
-            residuals[nres].trackingID = fh->trackingID;
-            targetFrames.push_back(fh);
+            residuals[nres].target = fh.get();
             nres++;
         }
     }
     assert(nres == ((int) frameHessians.size()) - 1);
 
-    bool print = true;//rand()%50==0;
+    bool print = false;//rand()%50==0;
 
     float lastEnergy = 0;
     float lastHdd = 0;
     float lastbd = 0;
     float currentIdepth = (point->idepth_max + point->idepth_min) * 0.5f;
 
-    PointHessian p;
 
     for (int i = 0; i < nres; i++) {
         lastEnergy += point->linearizeResidual(&hCalib, 1000, residuals + i, lastHdd, lastbd, currentIdepth,
-                                               targetFrames[i]);
+                                               (residuals + i)->target);
         residuals[i].state_state = residuals[i].state_NewState;
         residuals[i].state_energy = residuals[i].state_NewEnergy;
     }
@@ -714,7 +1009,7 @@ void Tracker::optimizeImmaturePoint(ImmaturePoint *point, int minObs, ImmaturePo
         if (print)
             printf("OptPoint: Not well-constrained (%d res, H=%.1f). E=%f. SKIP!\n",
                    nres, lastHdd, lastEnergy);
-        return;
+        return 0;
     }
 
     if (print)
@@ -732,7 +1027,8 @@ void Tracker::optimizeImmaturePoint(ImmaturePoint *point, int minObs, ImmaturePo
         float newbd = 0;
         float newEnergy = 0;
         for (int i = 0; i < nres; i++)
-            newEnergy += point->linearizeResidual(&hCalib, 1, residuals + i, newHdd, newbd, newIdepth, targetFrames[i]);
+            newEnergy += point->linearizeResidual(&hCalib, 1, residuals + i, newHdd, newbd, newIdepth,
+                                                  (residuals + i)->target);
 
         if (!std::isfinite(lastEnergy) || newHdd < setting_minIdepthH_act) {
             if (print)
@@ -740,7 +1036,7 @@ void Tracker::optimizeImmaturePoint(ImmaturePoint *point, int minObs, ImmaturePo
                        nres,
                        newHdd,
                        lastEnergy);
-            return;
+            return 0;
         }
 
         if (print)
@@ -772,7 +1068,7 @@ void Tracker::optimizeImmaturePoint(ImmaturePoint *point, int minObs, ImmaturePo
 
     if (!std::isfinite(currentIdepth)) {
         printf("MAJOR ERROR! point idepth is nan after initialization (%f).\n", currentIdepth);
-        return;        // yeah I'm like 99% sure this is OK on 32bit systems.
+        return (PointHessian *) ((long) (-1));        // yeah I'm like 99% sure this is OK on 32bit systems.
     }
 
 
@@ -782,108 +1078,198 @@ void Tracker::optimizeImmaturePoint(ImmaturePoint *point, int minObs, ImmaturePo
 
     if (numGoodRes < minObs) {
         if (print) printf("OptPoint: OUTLIER!\n");
-        return;        // yeah I'm like 99% sure this is OK on 32bit systems.
+        return (PointHessian *) ((long) (-1));        // yeah I'm like 99% sure this is OK on 32bit systems.
     }
 
 
-    VO::pointHessianFromImmaturePoint(point, &p);
+    PointHessian *p = new PointHessian(point, &hCalib);
+    if (!std::isfinite(p->energyTH)) {
+        delete p;
+        return (PointHessian *) ((long) (-1));
+    }
 
-    if (!std::isfinite(p.energyTH)) { return; }
 
-    p.lastResiduals[0].second = ResState::OOB;
-    p.lastResiduals[1].second = ResState::OOB;
-    p.setIdepthZero(currentIdepth);
-    p.setIdepth(currentIdepth);
-    p.setPointStatus(PointHessian::ACTIVE);
+    p->lastResiduals[0].first = 0;
+    p->lastResiduals[0].second = ResState::OOB;
+    p->lastResiduals[1].first = 0;
+    p->lastResiduals[1].second = ResState::OOB;
+    p->setIdepthZero(currentIdepth);
+    p->setIdepth(currentIdepth);
+    p->setPointStatus(PointHessian::ACTIVE);
 
-    for (int i = 0; i < nres; i++) {
-        p.idx = targetFrames[i]->trackingID;
+    for (int i = 0; i < nres; i++)
         if (residuals[i].state_state == ResState::IN) {
-            PointFrameResidual r(p.pointIndex);
-            r.state_NewEnergy = r.state_energy = 0;
-            r.state_NewState = ResState::OUTLIER;
-            r.setState(ResState::IN);
-            p.residuals.push_back(r);
+            PointFrameResidual *r = new PointFrameResidual(p, p->host, residuals[i].target);
+            r->state_NewEnergy = r->state_energy = 0;
+            r->state_NewState = ResState::OUTLIER;
+            r->setState(ResState::IN);
+            p->residuals.push_back(r);
 
-            if (r.trackingID == frameHessians.back()->trackingID) {
-                *p.lastResiduals[0].first = r;
-                p.lastResiduals[0].second = ResState::IN;
-            } else if (r.trackingID == frameHessians[frameHessians.size() - 2]->trackingID) {
-                *p.lastResiduals[1].first = r;
-                p.lastResiduals[1].second = ResState::IN;
+            if (r->target == frameHessians.back().get()) {
+                p->lastResiduals[0].first = r;
+                p->lastResiduals[0].second = ResState::IN;
+            } else if (r->target == (frameHessians.size() < 2 ? 0 : frameHessians[frameHessians.size() - 2]).get()) {
+                p->lastResiduals[1].first = r;
+                p->lastResiduals[1].second = ResState::IN;
             }
         }
-    }
-    if (print) printf("point activated!\n");
-    *phOut = p;
+    return p;
 }
 
-void Tracker::printEigenValLine()
-{
-    if(ef.lastHS.rows() < 12) return;
+void Tracker::printEigenValLine() {
+    if (ef.lastHS.rows() < 12) return;
 
 
-    MatXX Hp = ef.lastHS.bottomRightCorner(ef.lastHS.cols()-CPARS,ef.lastHS.cols()-CPARS);
-    MatXX Ha = ef.lastHS.bottomRightCorner(ef.lastHS.cols()-CPARS,ef.lastHS.cols()-CPARS);
-    int n = Hp.cols()/8;
-    assert(Hp.cols()%8==0);
+    MatXX Hp = ef.lastHS.bottomRightCorner(ef.lastHS.cols() - CPARS, ef.lastHS.cols() - CPARS);
+    MatXX Ha = ef.lastHS.bottomRightCorner(ef.lastHS.cols() - CPARS, ef.lastHS.cols() - CPARS);
+    int n = Hp.cols() / 8;
+    assert(Hp.cols() % 8 == 0);
 
     // sub-select
-    for(int i=0;i<n;i++)
-    {
-        MatXX tmp6 = Hp.block(i*8,0,6,n*8);
-        Hp.block(i*6,0,6,n*8) = tmp6;
+    for (int i = 0; i < n; i++) {
+        MatXX tmp6 = Hp.block(i * 8, 0, 6, n * 8);
+        Hp.block(i * 6, 0, 6, n * 8) = tmp6;
 
-        MatXX tmp2 = Ha.block(i*8+6,0,2,n*8);
-        Ha.block(i*2,0,2,n*8) = tmp2;
+        MatXX tmp2 = Ha.block(i * 8 + 6, 0, 2, n * 8);
+        Ha.block(i * 2, 0, 2, n * 8) = tmp2;
     }
-    for(int i=0;i<n;i++)
-    {
-        MatXX tmp6 = Hp.block(0,i*8,n*8,6);
-        Hp.block(0,i*6,n*8,6) = tmp6;
+    for (int i = 0; i < n; i++) {
+        MatXX tmp6 = Hp.block(0, i * 8, n * 8, 6);
+        Hp.block(0, i * 6, n * 8, 6) = tmp6;
 
-        MatXX tmp2 = Ha.block(0,i*8+6,n*8,2);
-        Ha.block(0,i*2,n*8,2) = tmp2;
+        MatXX tmp2 = Ha.block(0, i * 8 + 6, n * 8, 2);
+        Ha.block(0, i * 2, n * 8, 2) = tmp2;
     }
 
     VecX eigenvaluesAll = ef.lastHS.eigenvalues().real();
-    VecX eigenP = Hp.topLeftCorner(n*6,n*6).eigenvalues().real();
-    VecX eigenA = Ha.topLeftCorner(n*2,n*2).eigenvalues().real();
+    VecX eigenP = Hp.topLeftCorner(n * 6, n * 6).eigenvalues().real();
+    VecX eigenA = Ha.topLeftCorner(n * 2, n * 2).eigenvalues().real();
     VecX diagonal = ef.lastHS.diagonal();
 
-    std::sort(eigenvaluesAll.data(), eigenvaluesAll.data()+eigenvaluesAll.size());
-    std::sort(eigenP.data(), eigenP.data()+eigenP.size());
-    std::sort(eigenA.data(), eigenA.data()+eigenA.size());
+    std::sort(eigenvaluesAll.data(), eigenvaluesAll.data() + eigenvaluesAll.size());
+    std::sort(eigenP.data(), eigenP.data() + eigenP.size());
+    std::sort(eigenA.data(), eigenA.data() + eigenA.size());
 
-    int nz = std::max(100,setting_maxFrames*10);
+    int nz = std::max(100, setting_maxFrames * 10);
 
     {
-        VecX ea = VecX::Zero(nz); ea.head(eigenvaluesAll.size()) = eigenvaluesAll;
-        (*eigenAllLog) << frameHessians.back()->id << " " <<  ea.transpose() << "\n";
+        VecX ea = VecX::Zero(nz);
+        ea.head(eigenvaluesAll.size()) = eigenvaluesAll;
+        (*eigenAllLog) << frameHessians.back()->id << " " << ea.transpose() << "\n";
         eigenAllLog->flush();
     }
     {
-        VecX ea = VecX::Zero(nz); ea.head(eigenA.size()) = eigenA;
-        (*eigenALog) << frameHessians.back()->id << " " <<  ea.transpose() << "\n";
+        VecX ea = VecX::Zero(nz);
+        ea.head(eigenA.size()) = eigenA;
+        (*eigenALog) << frameHessians.back()->id << " " << ea.transpose() << "\n";
         eigenALog->flush();
     }
     {
-        VecX ea = VecX::Zero(nz); ea.head(eigenP.size()) = eigenP;
-        (*eigenPLog) << frameHessians.back()->id << " " <<  ea.transpose() << "\n";
+        VecX ea = VecX::Zero(nz);
+        ea.head(eigenP.size()) = eigenP;
+        (*eigenPLog) << frameHessians.back()->id << " " << ea.transpose() << "\n";
         eigenPLog->flush();
     }
 
     {
-        VecX ea = VecX::Zero(nz); ea.head(diagonal.size()) = diagonal;
-        (*DiagonalLog) << frameHessians.back()->id << " " <<  ea.transpose() << "\n";
+        VecX ea = VecX::Zero(nz);
+        ea.head(diagonal.size()) = diagonal;
+        (*DiagonalLog) << frameHessians.back()->id << " " << ea.transpose() << "\n";
         DiagonalLog->flush();
     }
 
     {
-        VecX ea = VecX::Zero(nz); ea.head(diagonal.size()) = ef.lastHS.inverse().diagonal();
-        (*variancesLog) << frameHessians.back()->id << " " <<  ea.transpose() << "\n";
+        VecX ea = VecX::Zero(nz);
+        ea.head(diagonal.size()) = ef.lastHS.inverse().diagonal();
+        (*variancesLog) << frameHessians.back()->id << " " << ea.transpose() << "\n";
         variancesLog->flush();
     }
 
     std::vector<VecX> &nsp = ef.lastNullspaces_forLogging;
+}
+
+void Tracker::applyRes_Reductor(bool b, int min, int max, Vec10 *stats, int tid) {
+    for (int k = min; k < max; k++)
+        activeResiduals[k]->applyRes(true);
+}
+
+void Tracker::flagPointsForRemoval() {
+    assert(EFIndicesValid);
+
+    std::vector<VO::Frame *> fhsToKeepPoints;
+    std::vector<VO::Frame *> fhsToMargPoints;
+
+    //if(setting_margPointVisWindow>0)
+    {
+        for (int i = ((int) frameHessians.size()) - 1; i >= 0 && i >= ((int) frameHessians.size()); i--)
+            if (!frameHessians[i]->flaggedForMarginalization) fhsToKeepPoints.push_back(frameHessians[i].get());
+
+        for (int i = 0; i < (int) frameHessians.size(); i++)
+            if (frameHessians[i]->flaggedForMarginalization) fhsToMargPoints.push_back(frameHessians[i].get());
+    }
+
+
+
+    //ef->setAdjointsF();
+    //ef->setDeltaF(&Hcalib);
+    int flag_oob = 0, flag_in = 0, flag_inin = 0, flag_nores = 0;
+
+    for (auto &host: frameHessians)        // go through all active frames
+    {
+        for (unsigned int i = 0; i < host->pointHessians.size(); i++) {
+            PointHessian *ph = host->pointHessians[i];
+            if (ph == 0) continue;
+
+            if (ph->idepth_scaled < 0 || ph->residuals.size() == 0) {
+                host->pointHessiansOut.push_back(ph);
+                ph->efPoint->stateFlag = EFPointStatus::PS_DROP;
+                host->pointHessians[i] = 0;
+                flag_nores++;
+            } else if (ph->isOOB(fhsToKeepPoints, fhsToMargPoints) || host->flaggedForMarginalization) {
+                flag_oob++;
+                if (ph->isInlierNew()) {
+                    flag_in++;
+                    int ngoodRes = 0;
+                    for (PointFrameResidual *r: ph->residuals) {
+                        r->resetOOB();
+                        r->linearize(&hCalib);
+                        r->efResidual->isLinearized = false;
+                        r->applyRes(true);
+                        if (r->efResidual->isActive()) {
+                            r->efResidual->fixLinearizationF(&ef);
+                            ngoodRes++;
+                        }
+                    }
+                    if (ph->idepth_hessian > setting_minIdepthH_marg) {
+                        flag_inin++;
+                        ph->efPoint->stateFlag = EFPointStatus::PS_MARGINALIZE;
+                        host->pointHessiansMarginalized.push_back(ph);
+                    } else {
+                        ph->efPoint->stateFlag = EFPointStatus::PS_DROP;
+                        host->pointHessiansOut.push_back(ph);
+                    }
+
+
+                } else {
+                    host->pointHessiansOut.push_back(ph);
+                    ph->efPoint->stateFlag = EFPointStatus::PS_DROP;
+
+
+                    //printf("drop point in frame %d (%d goodRes, %d activeRes)\n", ph->host->idx, ph->numGoodResiduals, (int)ph->residuals.size());
+                }
+
+                host->pointHessians[i] = 0;
+            }
+        }
+
+
+        for (int i = 0; i < (int) host->pointHessians.size(); i++) {
+            if (host->pointHessians[i] == 0) {
+                host->pointHessians[i] = host->pointHessians.back();
+                host->pointHessians.pop_back();
+                i--;
+            }
+        }
+    }
+
 }

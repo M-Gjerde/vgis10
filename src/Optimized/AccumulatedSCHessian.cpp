@@ -11,7 +11,7 @@ namespace dso
     void AccumulatedSCHessianSSE::addPoint(EFPoint* p, bool shiftPriorToZero, int tid)
     {
         int ngoodres = 0;
-        for(EFResidual r : p->residualsAll) if(r.isActive()) ngoodres++;
+        for(EFResidual* r : p->residualsAll) if(r->isActive()) ngoodres++;
         if(ngoodres==0)
         {
             p->HdiF=0;
@@ -36,20 +36,20 @@ namespace dso
         assert(std::isfinite((float)(p->HdiF)));
 
         int nFrames2 = nframes[tid]*nframes[tid];
-        for(EFResidual r1 : p->residualsAll)
+        for(EFResidual* r1 : p->residualsAll)
         {
-            if(!r1.isActive()) continue;
-            int r1ht = r1.hostIDX + r1.targetIDX*nframes[tid];
+            if(!r1->isActive()) continue;
+            int r1ht = r1->hostIDX + r1->targetIDX*nframes[tid];
 
-            for(EFResidual r2 : p->residualsAll)
+            for(EFResidual* r2 : p->residualsAll)
             {
-                if(!r2.isActive()) continue;
+                if(!r2->isActive()) continue;
 
-                accD[tid][r1ht+r2.targetIDX*nFrames2].update(r1.JpJdF, r2.JpJdF, p->HdiF);
+                accD[tid][r1ht+r2->targetIDX*nFrames2].update(r1->JpJdF, r2->JpJdF, p->HdiF);
             }
 
-            accE[tid][r1ht].update(r1.JpJdF, Hcd, p->HdiF);
-            accEB[tid][r1ht].update(r1.JpJdF,p->HdiF*p->bdSumF);
+            accE[tid][r1ht].update(r1->JpJdF, Hcd, p->HdiF);
+            accEB[tid][r1ht].update(r1->JpJdF,p->HdiF*p->bdSumF);
         }
     }
 void AccumulatedSCHessianSSE::stitchDoubleInternal(

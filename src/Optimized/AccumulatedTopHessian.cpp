@@ -27,25 +27,25 @@ namespace dso
         float Hdd_acc=0;
         VecCf  Hcd_acc = VecCf::Zero();
 
-        for(const EFResidual& r : p->residualsAll)
+        for(const EFResidual* r : p->residualsAll)
         {
             if(mode==0)
             {
-                if(r.isLinearized || !r.isActive()) continue;
+                if(r->isLinearized || !r->isActive()) continue;
             }
             if(mode==1)
             {
-                if(!r.isLinearized || !r.isActive()) continue;
+                if(!r->isLinearized || !r->isActive()) continue;
             }
             if(mode==2)
             {
-                if(!r.isActive()) continue;
-                assert(r.isLinearized);
+                if(!r->isActive()) continue;
+                assert(r->isLinearized);
             }
 
 
-            RawResidualJacobian* rJ = r.J;
-            int htIDX = r.hostIDX + r.targetIDX*nframes[tid];
+            RawResidualJacobian* rJ = r->J;
+            int htIDX = r->hostIDX + r->targetIDX*nframes[tid];
             Mat18f dp = ef->adHTdeltaF[htIDX];
 
 
@@ -54,7 +54,7 @@ namespace dso
             if(mode==0)
                 resApprox = rJ->resF;
             if(mode==2)
-                resApprox = r.res_toZeroF;
+                resApprox = r->res_toZeroF;
             if(mode==1)
             {
                 // compute Jp*delta
@@ -66,7 +66,7 @@ namespace dso
                 for(int i=0;i<patternNum;i+=4)
                 {
                     // PATTERN: rtz = resF - [JI*Jp Ja]*delta.
-                    __m128 rtz = _mm_load_ps(((float*)&r.res_toZeroF)+i);
+                    __m128 rtz = _mm_load_ps(((float*)&r->res_toZeroF)+i);
                     rtz = _mm_add_ps(rtz,_mm_mul_ps(_mm_load_ps(((float*)(rJ->JIdx))+i),Jp_delta_x));
                     rtz = _mm_add_ps(rtz,_mm_mul_ps(_mm_load_ps(((float*)(rJ->JIdx+1))+i),Jp_delta_y));
                     rtz = _mm_add_ps(rtz,_mm_mul_ps(_mm_load_ps(((float*)(rJ->JabF))+i),delta_a));
@@ -75,7 +75,7 @@ namespace dso
                 }
             }
 
-            // need to compute JI^T * r, and Jab^T * r. (both are 2-vectors).
+            // need to compute JI^T * r, and Jab^T * r-> (both are 2-vectors).
             Vec2f JI_r(0,0);
             Vec2f Jab_r(0,0);
             float rr=0;
@@ -208,8 +208,8 @@ namespace dso
             b.head<CPARS>() += EF->cPrior.cwiseProduct(EF->cDeltaF.cast<double>());
             for(int h=0;h<nframes[tid];h++)
             {
-                H.diagonal().segment<8>(CPARS+h*8) += EF->eFrames[h].prior;
-                b.segment<8>(CPARS+h*8) += EF->eFrames[h].prior.cwiseProduct(EF->eFrames[h].delta_prior);
+                H.diagonal().segment<8>(CPARS+h*8) += EF->eFrames[h]->prior;
+                b.segment<8>(CPARS+h*8) += EF->eFrames[h]->prior.cwiseProduct(EF->eFrames[h]->delta_prior);
             }
         }
     }
@@ -272,8 +272,8 @@ namespace dso
             b[tid].head<CPARS>() += EF->cPrior.cwiseProduct(EF->cDeltaF.cast<double>());
             for(int h=0;h<nframes[tid];h++)
             {
-                H[tid].diagonal().segment<8>(CPARS+h*8) += EF->eFrames[h].prior;
-                b[tid].segment<8>(CPARS+h*8) += EF->eFrames[h].prior.cwiseProduct(EF->eFrames[h].delta_prior);
+                H[tid].diagonal().segment<8>(CPARS+h*8) += EF->eFrames[h]->prior;
+                b[tid].segment<8>(CPARS+h*8) += EF->eFrames[h]->prior.cwiseProduct(EF->eFrames[h]->delta_prior);
 
             }
         }

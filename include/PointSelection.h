@@ -52,7 +52,7 @@ namespace VO {
 
         int currentPotential = 3;
 
-        int makeMaps(Frame *frame, float *map_out, float density, int recursionsLeft, bool plot, float thFactor);
+        int makeMaps(Frame *frame, float *map_out, float density, int recursionsLeft = 1, bool plot = false, float thFactor = 1);
         std::vector<unsigned char> randomPattern{};
 
     };

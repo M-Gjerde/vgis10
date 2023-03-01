@@ -16,65 +16,18 @@
 #include "FramePose.h"
 
 #include "PointHessian.h"
+#include "CalibHessian.h"
+
+class EFFrame;
+class ImmaturePoint;
 
 namespace VO {
 
-    struct FrameToFramePrecalc
-    {
-        EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
-        // precalc values
-        Mat33f PRE_RTll;
-        Mat33f PRE_KRKiTll;
-        Mat33f PRE_RKiTll;
-        Mat33f PRE_RTll_0;
-
-        Vec2f PRE_aff_mode;
-        float PRE_b0_mode{};
-
-        Vec3f PRE_tTll;
-        Vec3f PRE_KtTll;
-        Vec3f PRE_tTll_0;
-
-        float distanceLL{};
-
-        int hostTrackingID = 0;
-        int targetTrackingID = 0;
-
-        ~FrameToFramePrecalc() = default;
-        FrameToFramePrecalc() = default;
-        void set(const VO::FramePose& host, const VO::FramePose& target, float fxl , float fyl, float cyl, float cxl, int hostTrackID, int targetTrackID){
-
-            hostTrackingID = hostTrackID;
-            targetTrackingID = targetTrackID;
-
-            SE3 leftToLeft_0 = target.get_worldToCam_evalPT() * host.get_worldToCam_evalPT().inverse();
-            PRE_RTll_0 = (leftToLeft_0.rotationMatrix()).cast<float>();
-            PRE_tTll_0 = (leftToLeft_0.translation()).cast<float>();
-
-            SE3 leftToLeft = target.PRE_worldToCam * host.PRE_camToWorld;
-            PRE_RTll = (leftToLeft.rotationMatrix()).cast<float>();
-            PRE_tTll = (leftToLeft.translation()).cast<float>();
-            distanceLL = leftToLeft.translation().norm();
-
-            Mat33f K = Mat33f::Zero();
-            K(0,0) = fxl;
-            K(1,1) = fyl;
-            K(0,2) = cxl;
-            K(1,2) = cyl;
-            K(2,2) = 1;
-            PRE_KRKiTll = K * PRE_RTll * K.inverse();
-            PRE_RKiTll = PRE_RTll * K.inverse();
-            PRE_KtTll = K * PRE_tTll;
-
-
-            PRE_aff_mode = AffLight::fromToVecExposure(host.abExposure, target.abExposure, host.aff_g2l(), target.aff_g2l()).cast<float>();
-            PRE_b0_mode = host.aff_g2l_0().b;
-        }
-    };
-
+    class FrameToFramePrecalc;
     struct Frame {
         Frame() {
             Log::Logger::getInstance()->info("Created Frame Object {}", static_cast<void*>(this));
+            pose = new VO::FramePose();
         }
 
         ~Frame() {
@@ -101,16 +54,18 @@ namespace VO {
         int histStep = 0;
 
         // Points stuff
-        std::vector<PointHessian> pointHessians;                // contains all ACTIVE points.
-        std::vector<PointHessian> pointHessiansMarginalized;   	// contains all MARGINALIZED points (= fully marginalized, usually because point went OOB.)
-        std::vector<PointHessian> pointHessiansOut;		        // contains all OUTLIER points (= discarded.).
+        std::vector<PointHessian*> pointHessians;                // contains all ACTIVE points.
+        std::vector<PointHessian*> pointHessiansMarginalized;   	// contains all MARGINALIZED points (= fully marginalized, usually because point went OOB.)
+        std::vector<PointHessian*> pointHessiansOut;		        // contains all OUTLIER points (= discarded.).
+        std::vector<ImmaturePoint*> immaturePoints;     // contains all OUTLIER points (= discarded.).
 
         // EnergyStuff
         float frameEnergyTH = 8*8*patternNum;
+        EFFrame* efFrame;
 
         // Pose stuff
-        FramePose pose;
-        FramePose trackingRef;
+        FramePose* pose;
+        FramePose* trackingRef;
         std::vector<FrameToFramePrecalc,Eigen::aligned_allocator<FrameToFramePrecalc>> targetPrecalc;
 
         // Calibration stuff (global)
@@ -168,6 +123,66 @@ namespace VO {
                 cv::waitKey(0);
             else
                 cv::waitKey(30);
+        }
+    };
+
+    struct FrameToFramePrecalc {
+        VO::Frame *host;    // defines row
+        VO::Frame *target;    // defines column
+
+        EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
+        // precalc values
+        Mat33f PRE_RTll;
+        Mat33f PRE_KRKiTll;
+        Mat33f PRE_RKiTll;
+        Mat33f PRE_RTll_0;
+
+        Vec2f PRE_aff_mode;
+        float PRE_b0_mode{};
+
+        Vec3f PRE_tTll;
+        Vec3f PRE_KtTll;
+        Vec3f PRE_tTll_0;
+
+        float distanceLL{};
+
+        int hostTrackingID = 0;
+        int targetTrackingID = 0;
+
+        ~FrameToFramePrecalc() = default;
+
+        FrameToFramePrecalc() = default;
+
+        void set(VO::Frame *host, VO::Frame *target, CalibHessian *HCalib) {
+
+            this->host = host;
+            this->target = target;
+
+            SE3 leftToLeft_0 = target->pose->get_worldToCam_evalPT() * host->pose->get_worldToCam_evalPT().inverse();
+            PRE_RTll_0 = (leftToLeft_0.rotationMatrix()).cast<float>();
+            PRE_tTll_0 = (leftToLeft_0.translation()).cast<float>();
+
+
+            SE3 leftToLeft = target->pose->PRE_worldToCam * host->pose->PRE_camToWorld;
+            PRE_RTll = (leftToLeft.rotationMatrix()).cast<float>();
+            PRE_tTll = (leftToLeft.translation()).cast<float>();
+            distanceLL = leftToLeft.translation().norm();
+
+
+            Mat33f K = Mat33f::Zero();
+            K(0, 0) = HCalib->fxl();
+            K(1, 1) = HCalib->fyl();
+            K(0, 2) = HCalib->cxl();
+            K(1, 2) = HCalib->cyl();
+            K(2, 2) = 1;
+            PRE_KRKiTll = K * PRE_RTll * K.inverse();
+            PRE_RKiTll = PRE_RTll * K.inverse();
+            PRE_KtTll = K * PRE_tTll;
+
+
+            PRE_aff_mode = AffLight::fromToVecExposure(host->pose->abExposure, target->pose->abExposure,
+                                                       host->pose->aff_g2l(), target->pose->aff_g2l()).cast<float>();
+            PRE_b0_mode = host->pose->aff_g2l_0().b;
         }
     };
 

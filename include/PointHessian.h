@@ -8,10 +8,16 @@
 #include "Types.h"
 #include "Optimized/PointFrameResidual.h"
 
-struct PointHessian {
-    PointHessian() = default;
+class EFPoint;
+class ImmaturePoint;
 
-    ~PointHessian() {release();}
+struct PointHessian {
+    PointHessian(const ImmaturePoint* const rawPoint, CalibHessian* Hcalib);
+
+    ~PointHessian() {
+        for(unsigned int i=0;i<residuals.size();i++) delete residuals[i];
+        residuals.clear();
+    }
 
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
     //EFPoint* efPoint;
@@ -25,6 +31,8 @@ struct PointHessian {
     float energyTH;
     bool hasDepthPrior;
     int pointIndex = 0;
+    EFPoint* efPoint;
+    VO::Frame* host;
 
     float my_type;
 
@@ -41,7 +49,7 @@ struct PointHessian {
     float maxRelBaseline;
     int numGoodResiduals;
 
-    std::vector<PointFrameResidual> residuals;					    // only contains good residuals (not OOB and not OUTLIER). Arbitrary order.
+    std::vector<PointFrameResidual *> residuals;					    // only contains good residuals (not OOB and not OUTLIER). Arbitrary order.
     std::pair<PointFrameResidual* , ResState> lastResiduals[2]; 	// contains information about residuals to the last two (!) frames. ([0] = latest, [1] = the one before).
 
     bool isGood() const{
@@ -73,45 +81,14 @@ struct PointHessian {
     //std::pair<PointFrameResidual*, ResState> lastResiduals[2]; 	// contains information about residuals to the last two (!) frames. ([0] = latest, [1] = the one before).
 
 
-    void release(){
+    void release(){}
 
-    }
-
-
-
-
-    /*
-    inline bool isOOB(const std::vector<std::shared_ptr<VO::Frame>>& toKeep, const std::vector<std::shared_ptr<VO::Frame>>& toMarg) const
-    {
-
-        int visInToMarg = 0;
-        for(PointFrameResidual* r : residuals)
-        {
-            if(r->state_state != ResState::IN) continue;
-            for(FrameHessian* k : toMarg)
-                if(r->target == k) visInToMarg++;
-        }
-        if((int)residuals.size() >= setting_minGoodActiveResForMarg &&
-           numGoodResiduals > setting_minGoodResForMarg+10 &&
-           (int)residuals.size()-visInToMarg < setting_minGoodActiveResForMarg)
-            return true;
+    [[nodiscard]] bool isOOB(const std::vector<VO::Frame*>& toKeep, const std::vector<VO::Frame*>& toMarg) const;
+    bool isInlierNew();
 
 
 
 
 
-        if(lastResiduals[0].second == ResState::OOB) return true;
-        if(residuals.size() < 2) return false;
-        if(lastResiduals[0].second == ResState::OUTLIER && lastResiduals[1].second == ResState::OUTLIER) return true;
-        return false;
-    }
-
-
-    inline bool isInlierNew()
-    {
-        return (int)residuals.size() >= setting_minGoodActiveResForMarg
-               && numGoodResiduals >= setting_minGoodResForMarg;
-    }
-*/
 };
 #endif //VGIS10_POINTHESSIAN_H

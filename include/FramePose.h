@@ -26,6 +26,10 @@ namespace VO {
         Vec10 step_backup;
         Vec10 state_backup;
 
+        int marginalizedAt;
+        double movedByOpt;
+        bool poseValid = true;
+
         EIGEN_STRONG_INLINE const SE3 &get_worldToCam_evalPT() const { return worldToCam_evalPT; }
 
         EIGEN_STRONG_INLINE const Vec10 &get_state_zero() const { return state_zero; }

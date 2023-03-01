@@ -53,14 +53,14 @@ public:
         for(int i = 0; i < allFrames.size(); ++i)
         {
             if(frame == allFrames[i]) continue;
-            SE3 fhToNew = frame->pose.PRE_worldToCam * allFrames[i]->pose.PRE_camToWorld;
+            SE3 fhToNew = frame->pose->PRE_worldToCam * allFrames[i]->pose->PRE_camToWorld;
             Mat33f KRKi = (K[1] * fhToNew.rotationMatrix().cast<float>() * Ki[0]);
             Vec3f Kt = (K[1] * fhToNew.translation().cast<float>());
 
-            for(auto& ph : allFrames[i]->pointHessians)
+            for(auto* ph : allFrames[i]->pointHessians)
             {
                 assert(ph.status == PointHessian::ACTIVE);
-                Vec3f ptp = KRKi * Vec3f(ph.u, ph.v, 1) + Kt*ph.idepth_scaled;
+                Vec3f ptp = KRKi * Vec3f(ph->u, ph->v, 1) + Kt*ph->idepth_scaled;
                 int u = ptp[0] / ptp[2] + 0.5f;
                 int v = ptp[1] / ptp[2] + 0.5f;
                 if(!(u > 0 && v > 0 && u < w[1] && v < h[1])) continue;

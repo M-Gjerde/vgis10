@@ -6,6 +6,9 @@
 #define VGIS10_IMMATUREPOINTTEMPORARYRESIDUAL_H
 
 #include "Util/Enums.h"
+namespace VO{
+    class Frame;
+}
 
 struct ImmaturePointTemporaryResidual
 {
@@ -15,6 +18,7 @@ public:
     ResState state_NewState;
     double state_NewEnergy;
     int trackingID = -1;
+    VO::Frame* target;
 };
 
 #endif //VGIS10_IMMATUREPOINTTEMPORARYRESIDUAL_H

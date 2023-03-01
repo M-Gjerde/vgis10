@@ -59,8 +59,39 @@ EIGEN_STRONG_INLINE bool projectPoint(
     return Ku>1.1f && Kv>1.1f && Ku<wM3G && Kv<hM3G;
 }
 
+template<typename T> inline void deleteOut(std::vector<T*> &v, const int i)
+{
+    delete v[i];
+    v[i] = v.back();
+    v.pop_back();
+}
 
 
+template<typename T> inline void deleteOutOrder(std::vector<T*> &v, const T* element)
+{
+    int i=-1;
+    for(unsigned int k=0; k<v.size();k++)
+    {
+        if(v[k] == element)
+        {
+            i=k;
+            break;
+        }
+    }
+    assert(i!=-1);
+
+    for(unsigned int k=i+1; k<v.size();k++)
+        v[k-1] = v[k];
+    v.pop_back();
+
+    delete element;
+}
+
+static double linearize(PointHessian* point, CalibHessian* HCalib, PointFrameResidual* pointRes, const std::shared_ptr<VO::Frame>& host, const std::shared_ptr<VO::Frame>& target){
+
+    return 0;
+}
+/*
 static double linearize(PointHessian* point, CalibHessian* HCalib, PointFrameResidual* pointRes, const std::shared_ptr<VO::Frame>& host, const std::shared_ptr<VO::Frame>& target){
     pointRes->state_NewEnergyWithOutlier=-1;
 
@@ -255,6 +286,6 @@ static double linearize(PointHessian* point, CalibHessian* HCalib, PointFrameRes
     pointRes->state_NewEnergy = energyLeft;
     return energyLeft;
 }
-
+*/
 
 #endif //VGIS10_LINEARIZE_H

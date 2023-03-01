@@ -112,4 +112,17 @@ static int staticPattern[8][2] = {
 #define benchmark_initializerSlackFactor 1
 
 
+/* Parameters controlling when KF's are taken */
+#define  setting_keyframesPerSecond   0   // if ! 0, takes a fixed number of KF per second.
+#define setting_realTimeMaxKF   false   // if true, takes as many KF's as possible (will break the system if the camera stays stationary)
+#define  setting_maxShiftWeightT  0.04f * (640+480)
+#define  setting_maxShiftWeightR  0.0f * (640+480)
+#define  setting_maxShiftWeightRT  0.02f * (640+480)
+#define  setting_kfGlobalWeight   1   // general weight on threshold, the larger the more KF's are taken (e.g., 2   double the amount of KF's).
+#define  setting_maxAffineWeight  2
+
+/* when to re-track a frame */
+#define setting_reTrackThreshold  1.5 // (larger = re-track more often)
+
+
 #endif //VGIS10_SETTINGS_H

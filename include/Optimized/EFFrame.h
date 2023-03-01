@@ -17,9 +17,9 @@ public:
         frameID = frameIn->trackingID;
         data = frameIn;
 
-        prior =frameIn->pose.getPrior().head<8>();
-        delta = frameIn->pose.get_state_minus_stateZero().head<8>();
-        delta_prior =  (frameIn->pose.get_state() - frameIn->pose.getPriorZero()).head<8>();
+        prior =frameIn->pose->getPrior().head<8>();
+        delta = frameIn->pose->get_state_minus_stateZero().head<8>();
+        delta_prior =  (frameIn->pose->get_state() - frameIn->pose->getPriorZero()).head<8>();
     }
 
     std::shared_ptr<VO::Frame> data;
@@ -29,7 +29,7 @@ public:
     Vec8 delta;				// state - state_zero.
 
 
-    std::vector<EFPoint> points;
+    std::vector<EFPoint *> points;
     int idx;	// idx in frames.
     int frameID;
 };
