@@ -51,8 +51,8 @@ float Tracker::optimize(int mnumOptIts) {
                                      sqrtf((float) (lastEnergy[0] / (patternNum * ef.resInA))),
                                      ef.resInA,
                                      ef.resInM,
-                                     frameHessians.back()->pose->aff_g2l().a,
-                                     frameHessians.back()->pose->aff_g2l().b);
+                                     frameHessians.back()->aff_g2l().a,
+                                     frameHessians.back()->aff_g2l().b);
 
     double lambda = 1e-1;
     float stepsize = 1;
@@ -94,8 +94,8 @@ float Tracker::optimize(int mnumOptIts) {
                                          sqrtf((float) (newEnergy[0] / (patternNum * ef.resInA))),
                                          ef.resInA,
                                          ef.resInM,
-                                         frameHessians.back()->pose->aff_g2l().a,
-                                         frameHessians.back()->pose->aff_g2l().b);
+                                         frameHessians.back()->aff_g2l().a,
+                                         frameHessians.back()->aff_g2l().b);
 
         if (setting_forceAceptStep || (newEnergy[0] + newEnergy[1] + newEnergyL + newEnergyM <
                                        lastEnergy[0] + lastEnergy[1] + lastEnergyL + lastEnergyM)) {
@@ -126,9 +126,9 @@ float Tracker::optimize(int mnumOptIts) {
 
 
     Vec10 newStateZero = Vec10::Zero();
-    newStateZero.segment<2>(6) = frameHessians.back()->pose->get_state().segment<2>(6);
+    newStateZero.segment<2>(6) = frameHessians.back()->get_state().segment<2>(6);
 
-    frameHessians.back()->pose->setEvalPT(frameHessians.back()->pose->PRE_worldToCam,
+    frameHessians.back()->setEvalPT(frameHessians.back()->PRE_worldToCam,
                                          newStateZero);
     EFDeltaValid = false;
     EFAdjointsValid = false;
@@ -161,8 +161,8 @@ float Tracker::optimize(int mnumOptIts) {
     {
         //boost::unique_lock<boost::mutex> crlock(shellPoseMutex);
         for (auto &fh: frameHessians) {
-            fh->pose->frameToWorld = fh->pose->PRE_camToWorld; // TODO double check
-            fh->pose->aff_g2l() = fh->pose->aff_g2l();
+            fh->shell->camToWorld = fh->PRE_camToWorld; // TODO double check
+            fh->shell->aff_g2l = fh->aff_g2l();
         }
     }
 
@@ -200,7 +200,7 @@ std::vector<VecX> Tracker::getNullspaces(
         VecX nullspace_x0(n);
         nullspace_x0.setZero();
         for (auto &fh: frameHessians) {
-            nullspace_x0.segment<6>(CPARS + fh->trackingID * 8) = fh->pose->nullspaces_pose.col(i);
+            nullspace_x0.segment<6>(CPARS + fh->trackingID * 8) = fh->nullspaces_pose.col(i);
             nullspace_x0.segment<3>(CPARS + fh->trackingID * 8) *= SCALE_XI_TRANS_INVERSE;
             nullspace_x0.segment<3>(CPARS + fh->trackingID * 8 + 3) *= SCALE_XI_ROT_INVERSE;
         }
@@ -211,7 +211,7 @@ std::vector<VecX> Tracker::getNullspaces(
         VecX nullspace_x0(n);
         nullspace_x0.setZero();
         for (auto &fh: frameHessians) {
-            nullspace_x0.segment<2>(CPARS + fh->trackingID * 8 + 6) = fh->pose->nullspaces_affine.col(i).head<2>();
+            nullspace_x0.segment<2>(CPARS + fh->trackingID * 8 + 6) = fh->nullspaces_affine.col(i).head<2>();
             nullspace_x0[CPARS + fh->trackingID * 8 + 6] *= SCALE_A_INVERSE;
             nullspace_x0[CPARS + fh->trackingID * 8 + 7] *= SCALE_B_INVERSE;
         }
@@ -223,7 +223,7 @@ std::vector<VecX> Tracker::getNullspaces(
     VecX nullspace_x0(n);
     nullspace_x0.setZero();
     for (auto &fh: frameHessians) {
-        nullspace_x0.segment<6>(CPARS + fh->trackingID * 8) = fh->pose->nullspaces_scale;
+        nullspace_x0.segment<6>(CPARS + fh->trackingID * 8) = fh->nullspaces_scale;
         nullspace_x0.segment<3>(CPARS + fh->trackingID * 8) *= SCALE_XI_TRANS_INVERSE;
         nullspace_x0.segment<3>(CPARS + fh->trackingID * 8 + 3) *= SCALE_XI_ROT_INVERSE;
     }
@@ -251,11 +251,11 @@ bool Tracker::doStepFromBackup(float stepfacC, float stepfacT, float stepfacR, f
     hCalib.setValue(hCalib.value_backup + stepfacC*hCalib.step);
     for(auto& fh : frameHessians)
     {
-        fh->pose->setState(fh->pose->state_backup + pstepfac.cwiseProduct(fh->pose->step));
-        sumA += fh->pose->step[6]*fh->pose->step[6];
-        sumB += fh->pose->step[7]*fh->pose->step[7];
-        sumT += fh->pose->step.segment<3>(0).squaredNorm();
-        sumR += fh->pose->step.segment<3>(3).squaredNorm();
+        fh->setState(fh->state_backup + pstepfac.cwiseProduct(fh->step));
+        sumA += fh->step[6]*fh->step[6];
+        sumB += fh->step[7]*fh->step[7];
+        sumT += fh->step.segment<3>(0).squaredNorm();
+        sumR += fh->step.segment<3>(3).squaredNorm();
 
         for(PointHessian* ph : fh->pointHessians)
         {
@@ -300,7 +300,7 @@ void Tracker::backupState(bool backupLastStep) {
     hCalib.value_backup = hCalib.value;
     for(auto& fh : frameHessians)
     {
-        fh->pose->state_backup = fh->pose->get_state();
+        fh->state_backup = fh->get_state();
         for(PointHessian* ph : fh->pointHessians)
             ph->idepth_backup = ph->idepth;
     }
@@ -309,9 +309,11 @@ void Tracker::backupState(bool backupLastStep) {
 // sets linearization point.
 void Tracker::loadSateBackup() {
     hCalib.setValue(hCalib.value_backup);
-    for (auto &fh: frameHessians) {
-        fh->pose->setState(fh->pose->state_backup);
-        for (auto* ph: fh->pointHessians) {
+    for(auto& fh : frameHessians)
+    {
+        fh->setState(fh->state_backup);
+        for(PointHessian* ph : fh->pointHessians)
+        {
             ph->setIdepth(ph->idepth_backup);
 
             ph->setIdepthZero(ph->idepth_backup);
@@ -320,7 +322,7 @@ void Tracker::loadSateBackup() {
     }
 
 
-    EFDeltaValid = false;
+    EFDeltaValid=false;
     setPrecalcValues();
 }
 

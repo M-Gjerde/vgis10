@@ -29,7 +29,8 @@ set(SRC_FILES
         src/CoarseTracker.cpp
         src/Optimized/PointFrameResidual.cpp
         src/PointHessian.cpp
-        src/Optimized/EFResidual.cpp)
+        src/Optimized/EFResidual.cpp
+        src/Frame.cpp)
 
 add_executable(vgis10 ${SRC_FILES})
 target_link_libraries(vgis10 fmt::fmt ${OpenCV_LIBS} Eigen3::Eigen sophus yaml-cpp::yaml-cpp -lboost_thread)

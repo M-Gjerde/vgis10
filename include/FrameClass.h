@@ -34,12 +34,12 @@ namespace VO {
 
         std::shared_ptr<Frame> getNextFrame(const CameraCalibration* calibration);
 
+        uint32_t m_FrameID = 0;
     private:
         std::filesystem::path m_FolderPath{};
         std::vector<std::filesystem::path> m_FileNames{};
         uint32_t m_datasetImagesCount = 0;
 
-        uint32_t m_FrameID = 0;
         Frame *m_CurrentFrame{};
         Frame *m_PreviousFrame{};
 

@@ -90,8 +90,8 @@ void CoarseTracker::setCoarseTrackingRef(std::vector<std::shared_ptr<VO::Frame>>
 
 
 
-    refFrameID = lastRef->pose->trackingID;
-    lastRef_aff_g2l = lastRef->pose->aff_g2l();
+    refFrameID = lastRef->shell->id;
+    lastRef_aff_g2l = lastRef->aff_g2l();
 
     firstCoarseRMSE=-1;
 }
@@ -135,7 +135,7 @@ CoarseTracker::trackNewestCoarse(std::shared_ptr<VO::Frame> newFrameHessian, SE3
         float lambda = 0.01;
 
         {
-            Vec2f relAff = AffLight::fromToVecExposure(lastRef->pose->abExposure, newFrame->pose->abExposure, lastRef_aff_g2l, aff_g2l_current).cast<float>();
+            Vec2f relAff = AffLight::fromToVecExposure(lastRef->abExposure, newFrame->abExposure, lastRef_aff_g2l, aff_g2l_current).cast<float>();
             Log::Logger::getInstance()->info("lvl {}, it {} (l={} / {}) {}: {:.3f}->{:.3f} ({} -> {}) (|inc| = {})! \t",
                    lvl, -1, lambda, 1.0f,
                    "INITIA",
@@ -203,7 +203,7 @@ CoarseTracker::trackNewestCoarse(std::shared_ptr<VO::Frame> newFrameHessian, SE3
 
             if(debugPrint)
             {
-                Vec2f relAff = AffLight::fromToVecExposure(lastRef->pose->abExposure, newFrame->pose->abExposure, lastRef_aff_g2l, aff_g2l_new).cast<float>();
+                Vec2f relAff = AffLight::fromToVecExposure(lastRef->abExposure, newFrame->abExposure, lastRef_aff_g2l, aff_g2l_new).cast<float>();
                 Log::Logger::getInstance()->info("lvl {}, it {} (l={} / {}) {}: {:.3f}->{:.3f} ({} -> {}) (|inc| = {})! \t",
                        lvl, iteration, lambda,
                        extrapFac,
@@ -262,7 +262,7 @@ CoarseTracker::trackNewestCoarse(std::shared_ptr<VO::Frame> newFrameHessian, SE3
         Log::Logger::getInstance()->info("bad brightness transfer result");
         return false;
     }
-    Vec2f relAff = AffLight::fromToVecExposure(lastRef->pose->abExposure, newFrame->pose->abExposure, lastRef_aff_g2l, aff_g2l_out).cast<float>();
+    Vec2f relAff = AffLight::fromToVecExposure(lastRef->abExposure, newFrame->abExposure, lastRef_aff_g2l, aff_g2l_out).cast<float>();
 
     if((setting_affineOptModeA == 0 && (fabsf(logf((float)relAff[0])) > 1.5))
        || (setting_affineOptModeB == 0 && (fabsf((float)relAff[1]) > 200))) {
@@ -453,7 +453,7 @@ Vec6 CoarseTracker::calcRes(int lvl, const SE3 &refToNew, AffLight aff_g2l, floa
 
     Mat33f RKi = (refToNew.rotationMatrix().cast<float>() * Ki[lvl]);
     Vec3f t = (refToNew.translation()).cast<float>();
-    Vec2f affLL = AffLight::fromToVecExposure(lastRef->pose->abExposure, newFrame->pose->abExposure, lastRef_aff_g2l, aff_g2l).cast<float>();
+    Vec2f affLL = AffLight::fromToVecExposure(lastRef->abExposure, newFrame->abExposure, lastRef_aff_g2l, aff_g2l).cast<float>();
 
 
     float sumSquaredShiftT=0;
@@ -582,7 +582,7 @@ void CoarseTracker::calcGSSSE(int lvl, Mat88 &H_out, Vec8 &b_out, const SE3 &ref
     __m128 fxl = _mm_set1_ps(fx[lvl]);
     __m128 fyl = _mm_set1_ps(fy[lvl]);
     __m128 b0 = _mm_set1_ps(lastRef_aff_g2l.b);
-    __m128 a = _mm_set1_ps((float)(AffLight::fromToVecExposure(lastRef->pose->abExposure, newFrame->pose->abExposure, lastRef_aff_g2l, aff_g2l)[0]));
+    __m128 a = _mm_set1_ps((float)(AffLight::fromToVecExposure(lastRef->abExposure, newFrame->abExposure, lastRef_aff_g2l, aff_g2l)[0]));
 
     __m128 one = _mm_set1_ps(1);
     __m128 minusOne = _mm_set1_ps(-1);

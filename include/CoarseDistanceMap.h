@@ -53,7 +53,7 @@ public:
         for(int i = 0; i < allFrames.size(); ++i)
         {
             if(frame == allFrames[i]) continue;
-            SE3 fhToNew = frame->pose->PRE_worldToCam * allFrames[i]->pose->PRE_camToWorld;
+            SE3 fhToNew = frame->PRE_worldToCam * allFrames[i]->PRE_camToWorld;
             Mat33f KRKi = (K[1] * fhToNew.rotationMatrix().cast<float>() * Ki[0]);
             Vec3f Kt = (K[1] * fhToNew.translation().cast<float>());
 

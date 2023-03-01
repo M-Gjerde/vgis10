@@ -12,8 +12,9 @@
 
 void Tracker::initializeFromInitializer() {
     firstFrame->trackingID = 0;
-    firstFrame->pose->trackingID = 0;
     ef.insertFrame(firstFrame, &hCalib);
+    firstFrame->frameID = 0;
+    firstFrame->trackingID = 0;
 
     // RescaleFactor
     float sumID = 1e-5, numID = 1e-5;
@@ -54,21 +55,18 @@ void Tracker::initializeFromInitializer() {
     firstToNew.translation() /= rescaleFactor;
     frameHessians.emplace_back(firstFrame);
 
-    firstFrame->pose->frameToWorld = SE3();
-    firstFrame->pose->affLightg2l = AffLight(0, 0);
-    firstFrame->pose->frameToTrackingRef = SE3();
-    firstFrame->pose->setEvalPT_scaled(firstFrame->pose->frameToWorld, firstFrame->pose->affLightg2l);
-    firstFrame->pose->abExposure = firstFrame->abExposure;
-    firstFrame->pose->trackingID = firstFrame->trackingID;
+    firstFrame->shell->camToWorld = SE3();
+    firstFrame->shell->aff_g2l = AffLight(0,0);
+    firstFrame->setEvalPT_scaled(firstFrame->shell->camToWorld.inverse(),firstFrame->shell->aff_g2l);
+    firstFrame->shell->trackingRef=0;
+    firstFrame->shell->camToTrackingRef = SE3();
 
 
-    secondFrame->pose->frameToWorld = firstToNew.inverse();
-    secondFrame->pose->affLightg2l = AffLight(0, 0);
-    secondFrame->pose->frameToTrackingRef = firstToNew.inverse();
-    secondFrame->pose->setEvalPT_scaled(secondFrame->pose->frameToWorld, secondFrame->pose->affLightg2l);
-    secondFrame->pose->abExposure = secondFrame->abExposure;
-    secondFrame->pose->trackingID = 1;
-    secondFrame->trackingRef = firstFrame->pose;
+    secondFrame->shell->camToWorld = firstToNew.inverse();
+    secondFrame->shell->aff_g2l = AffLight(0,0);
+    secondFrame->setEvalPT_scaled(secondFrame->shell->camToWorld.inverse(),secondFrame->shell->aff_g2l);
+    secondFrame->shell->trackingRef = firstFrame->shell;
+    secondFrame->shell->camToTrackingRef = firstToNew.inverse();
     setPrecalcValues();
 
     initialized = true;
@@ -80,10 +78,6 @@ void Tracker::initializeFromInitializer() {
 bool Tracker::initializerTrackFrame(const std::shared_ptr<VO::Frame> &frame, const CameraCalibration *calibration) {
     int maxIterations[] = {5, 5, 10, 30, 50};
     secondFrame = frame;
-    // frame->displayPyramid(0, false, "frame");
-    //firstFrame->displayPyramid(0,true, "firstFrame");
-    allFrameHistory.push_back(frame->pose);
-
 
     info.JbBuffer.resize(frame->width * frame->height);
     info.JbBuffer_new.resize(frame->width * frame->height);
@@ -270,22 +264,21 @@ void Tracker::takeTrackedFrame(const std::shared_ptr<VO::Frame> &frame, bool nee
 
 void Tracker::makeKeyFrame(std::shared_ptr<VO::Frame> frame) {
     // =========================== UPDATE POSE =========================
+    assert(fh->shell->trackingRef != 0);
 
-    frame->pose->frameToWorld = frame->trackingRef->frameToWorld * frame->pose->frameToTrackingRef;
-    frame->pose->setEvalPT_scaled(frame->pose->frameToWorld.inverse(), frame->pose->affLightg2l);
+    frame->shell->camToWorld =  frame->shell->trackingRef->camToWorld * frame->shell->camToTrackingRef;
+    frame->setEvalPT_scaled(frame->shell->camToWorld.inverse(),frame->shell->aff_g2l);
     // traceNewCoarse
-    Log::Logger::getInstance()->info("Tracing new coarse");
     traceNewCoarse(frame);
     // =========================== Flag Frames to be Marginalized. =========================
-    Log::Logger::getInstance()->info("Flagging frames for marginalization");
     flagFramesForMarginalization(frame);
     // =========================== add New Frame to Hessian Struct. =========================
 
 
     frame->trackingID = frameHessians.size();
-    frame->pose->trackingID = frame->trackingID;
     frameHessians.emplace_back(frame);
-    allKeyFramesHistory.emplace_back(frame->pose);
+    frame->frameID = allKeyFramesHistory.size();
+    allKeyFramesHistory.emplace_back(frame->shell);
     ef.insertFrame(frame, &hCalib);
     setPrecalcValues();
 
@@ -293,7 +286,7 @@ void Tracker::makeKeyFrame(std::shared_ptr<VO::Frame> frame) {
     for (auto &fh1: frameHessians) {
         if (fh1 == frame) continue;
         for (PointHessian *ph: fh1->pointHessians) {
-            PointFrameResidual *r = new PointFrameResidual(ph, fh1.get(), frame.get());
+            auto *r = new PointFrameResidual(ph, fh1.get(), frame.get());
             r->setState(ResState::IN);
             ph->residuals.push_back(r);
             ef.insertResidual(r);
@@ -364,8 +357,8 @@ void Tracker::makeNonKeyFrame(std::shared_ptr<VO::Frame> frame) {
     // needs to be set by mapping thread. no lock required since we are in mapping thread.
     {
         assert(fh->shell->trackingRef != 0);
-        frame->pose->frameToWorld = frame->trackingRef->frameToWorld * frame->pose->frameToTrackingRef;
-        frame->pose->setEvalPT_scaled(frame->pose->frameToWorld.inverse(), frame->pose->aff_g2l());
+        frame->shell->camToWorld =  frame->shell->trackingRef->camToWorld * frame->shell->camToTrackingRef;
+        frame->setEvalPT_scaled(frame->shell->camToWorld.inverse(),frame->shell->aff_g2l);
     }
 
     traceNewCoarse(frame);
@@ -413,8 +406,8 @@ void Tracker::marginalizeFrame(VO::Frame *frame) {
     }
 
 
-    frame->pose->marginalizedAt = frameHessians.back()->pose->trackingID;
-    frame->pose->movedByOpt = frame->pose->w2c_leftEps().norm();
+    frame->shell->marginalizedAt = frameHessians.back()->shell->id;
+    frame->shell->movedByOpt = frame->w2c_leftEps().norm();
 
     for(int i = 0; auto& f : frameHessians){
         if (f.get() == frame){
@@ -479,9 +472,9 @@ Vec4 Tracker::trackNewCoarse(std::shared_ptr<VO::Frame> fh) {
         SE3 slast_2_sprelast;
         SE3 lastF_2_slast;
         {    // lock on global pose consistency!
-            slast_2_sprelast = sprelast->frameToWorld.inverse() * slast->frameToWorld;
-            lastF_2_slast = slast->frameToWorld.inverse() * lastF->pose->frameToWorld;
-            aff_last_2_l = slast->aff_g2l();
+            slast_2_sprelast = sprelast->camToWorld.inverse() * slast->camToWorld;
+            lastF_2_slast = slast->camToWorld.inverse() * lastF->shell->camToWorld;
+            aff_last_2_l = slast->aff_g2l;
         }
         SE3 fh_2_slast = slast_2_sprelast;// assumed to be the same as fh_2_slast.
 
@@ -579,7 +572,7 @@ Vec4 Tracker::trackNewCoarse(std::shared_ptr<VO::Frame> fh) {
                                            Vec3(0, 0, 0)));    // assume constant motion.
         }
 
-        if (!slast->poseValid || !sprelast->poseValid || !lastF->pose->poseValid) {
+        if (!slast->poseValid || !sprelast->poseValid || !lastF->shell->poseValid) {
             lastF_2_fh_tries.clear();
             lastF_2_fh_tries.push_back(SE3());
         }
@@ -663,12 +656,10 @@ Vec4 Tracker::trackNewCoarse(std::shared_ptr<VO::Frame> fh) {
 
     lastCoarseRMSE = achievedRes;
 
-    // no lock required, as fh is not used anywhere yet.
-    fh->pose->frameToTrackingRef = lastF_2_fh.inverse();
-    fh->trackingRef = lastF->pose;
-    fh->pose->aff_g2l() = aff_g2l;
-    fh->pose->frameToWorld = fh->trackingRef->frameToWorld * fh->pose->frameToTrackingRef;
-
+    fh->shell->camToTrackingRef = lastF_2_fh.inverse();
+    fh->shell->trackingRef = lastF->shell;
+    fh->shell->aff_g2l = aff_g2l;
+    fh->shell->camToWorld = fh->shell->trackingRef->camToWorld * fh->shell->camToTrackingRef;
 
     if (coarseTracker->firstCoarseRMSE < 0)
         coarseTracker->firstCoarseRMSE = achievedRes[0];
@@ -691,14 +682,14 @@ void Tracker::traceNewCoarse(std::shared_ptr<VO::Frame> frame) {
     for (auto &host: frameHessians)        // go through all active frames
     {
 
-        SE3 hostToNew = frame->pose->PRE_worldToCam * host->pose->PRE_camToWorld;
+        SE3 hostToNew = frame->PRE_worldToCam * host->PRE_camToWorld;
         Mat33f KRKi = K * hostToNew.rotationMatrix().cast<float>() * K.inverse();
         Vec3f Kt = K * hostToNew.translation().cast<float>();
 
-        Vec2f aff = AffLight::fromToVecExposure(host->pose->abExposure, frame->pose->abExposure, host->pose->aff_g2l(),
-                                                frame->pose->aff_g2l()).cast<float>();
 
-       Log::Logger::getInstance()->info("Tracing points id: {}, tracking id: {}, Immature points: {} ", host->id, host->trackingID,  host->immaturePoints.size());
+        Vec2f aff = AffLight::fromToVecExposure(host->abExposure, frame->abExposure, host->aff_g2l(), frame->aff_g2l()).cast<float>();
+
+       Log::Logger::getInstance()->info("Tracing points. Frame id: {}, tracking id: {}, Immature points: {} ", host->frameID, host->trackingID,  host->immaturePoints.size());
 
         for (ImmaturePoint *ph: host->immaturePoints) {
             ph->traceOn(frame, KRKi, Kt, aff, &hCalib, calibration, true);
@@ -733,10 +724,9 @@ void Tracker::flagFramesForMarginalization(std::shared_ptr<VO::Frame> sharedPtr)
         int in = fh->pointHessians.size() + fh->immaturePoints.size();
         size_t out = fh->pointHessiansMarginalized.size() + fh->pointHessiansOut.size();
 
-        Vec2 refToFh = AffLight::fromToVecExposure(frameHessians.back()->abExposure, fh->abExposure,
-                                                   frameHessians.back()->pose->aff_g2l(),
-                                                   frameHessians[i]->pose->aff_g2l());
 
+        Vec2 refToFh=AffLight::fromToVecExposure(frameHessians.back()->abExposure, fh->abExposure,
+                                                 frameHessians.back()->aff_g2l(), fh->aff_g2l());
 
         if ((in < setting_minPointsRemaining * (in + out) ||
              fabs(logf((float) refToFh[0])) > setting_maxLogAffFacInWindow)
@@ -769,16 +759,13 @@ void Tracker::flagFramesForMarginalization(std::shared_ptr<VO::Frame> sharedPtr)
 
 
         for (std::shared_ptr<VO::Frame> &fh: frameHessians) {
-            if (fh->trackingID > latest->trackingID - setting_minFrameAge || fh->trackingID == 0) continue;
+            if(fh->frameID > latest->frameID-setting_minFrameAge || fh->frameID == 0) continue;
             //if(fh==frameHessians.front() == 0) continue;
 
             double distScore = 0;
             for (VO::FrameToFramePrecalc ffh: fh->targetPrecalc) {
-                // TODO check if I'm using correct id and check frameToFramePrecalc is correct Correct IF statements?
-                if (ffh.hostTrackingID > latest->trackingID - setting_minFrameAge + 1 ||
-                    ffh.hostTrackingID == fh->trackingID)
-                    continue;
-                distScore += 1 / (1e-5 + ffh.distanceLL);
+                if(ffh.target->frameID > latest->frameID-setting_minFrameAge+1 || ffh.target == ffh.host) continue;
+                distScore += 1/(1e-5+ffh.distanceLL);
 
             }
             distScore *= -sqrtf(fh->targetPrecalc.back().distanceLL);
@@ -791,7 +778,7 @@ void Tracker::flagFramesForMarginalization(std::shared_ptr<VO::Frame> sharedPtr)
         }
 
         Log::Logger::getInstance()->info("MARGINALIZE frame {}, as it is the closest (score {:.2f})!",
-                                         toMarginalize->id, smallestScore);
+                                         toMarginalize->frameID, smallestScore);
         toMarginalize->flaggedForMarginalization = true;
         flagged++;
     }
@@ -846,7 +833,7 @@ void Tracker::activatePointsMT() {
     {
         if (host == newestHs) continue;
 
-        SE3 fhToNew = newestHs->pose->PRE_worldToCam * host->pose->PRE_camToWorld;
+        SE3 fhToNew = newestHs->PRE_worldToCam * host->PRE_camToWorld;
         Mat33f KRKi = (coarseDistanceMap.K[1] * fhToNew.rotationMatrix().cast<float>() * coarseDistanceMap.Ki[0]);
         Vec3f Kt = (coarseDistanceMap.K[1] * fhToNew.translation().cast<float>());
 
@@ -1155,33 +1142,33 @@ void Tracker::printEigenValLine() {
     {
         VecX ea = VecX::Zero(nz);
         ea.head(eigenvaluesAll.size()) = eigenvaluesAll;
-        (*eigenAllLog) << frameHessians.back()->id << " " << ea.transpose() << "\n";
+        (*eigenAllLog) << frameHessians.back()->frameID << " " << ea.transpose() << "\n";
         eigenAllLog->flush();
     }
     {
         VecX ea = VecX::Zero(nz);
         ea.head(eigenA.size()) = eigenA;
-        (*eigenALog) << frameHessians.back()->id << " " << ea.transpose() << "\n";
+        (*eigenALog) << frameHessians.back()->frameID << " " << ea.transpose() << "\n";
         eigenALog->flush();
     }
     {
         VecX ea = VecX::Zero(nz);
         ea.head(eigenP.size()) = eigenP;
-        (*eigenPLog) << frameHessians.back()->id << " " << ea.transpose() << "\n";
+        (*eigenPLog) << frameHessians.back()->frameID << " " << ea.transpose() << "\n";
         eigenPLog->flush();
     }
 
     {
         VecX ea = VecX::Zero(nz);
         ea.head(diagonal.size()) = diagonal;
-        (*DiagonalLog) << frameHessians.back()->id << " " << ea.transpose() << "\n";
+        (*DiagonalLog) << frameHessians.back()->frameID << " " << ea.transpose() << "\n";
         DiagonalLog->flush();
     }
 
     {
         VecX ea = VecX::Zero(nz);
         ea.head(diagonal.size()) = ef.lastHS.inverse().diagonal();
-        (*variancesLog) << frameHessians.back()->id << " " << ea.transpose() << "\n";
+        (*variancesLog) << frameHessians.back()->frameID << " " << ea.transpose() << "\n";
         variancesLog->flush();
     }
 

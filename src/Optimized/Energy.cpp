@@ -129,7 +129,7 @@ void EnergyFunctional::setAdjointsF(CalibHessian *Hcalib) {
             VO::Frame *host = eFrames[h]->data.get();
             VO::Frame *target = eFrames[t]->data.get();
 
-            SE3 hostToTarget = target->pose->get_worldToCam_evalPT() * host->pose->get_worldToCam_evalPT().inverse();
+            SE3 hostToTarget = target->get_worldToCam_evalPT() * host->get_worldToCam_evalPT().inverse();
 
             Mat88 AH = Mat88::Identity();
             Mat88 AT = Mat88::Identity();
@@ -138,8 +138,9 @@ void EnergyFunctional::setAdjointsF(CalibHessian *Hcalib) {
             AT.topLeftCorner<6, 6>() = Mat66::Identity();
 
 
-            Vec2f affLL = AffLight::fromToVecExposure(host->abExposure, target->abExposure, host->pose->aff_g2l_0(),
-                                                      target->pose->aff_g2l_0()).cast<float>();
+
+            Vec2f affLL = AffLight::fromToVecExposure(host->abExposure, target->abExposure, host->aff_g2l_0(),
+                                                      target->aff_g2l_0()).cast<float>();
             AT(6, 6) = -affLL[0];
             AH(6, 6) = affLL[0];
             AT(7, 7) = -1;
@@ -231,7 +232,7 @@ double EnergyFunctional::calcLEnergyF_MT() {
 
 void EnergyFunctional::calcLEnergyPt(int min, int max, Vec10 *stats, int tid) {
 
-    dso::Accumulator11 E{};
+    dso::Accumulator11 E;
     E.initialize();
     VecCf dc = cDeltaF;
 
@@ -243,10 +244,7 @@ void EnergyFunctional::calcLEnergyPt(int min, int max, Vec10 *stats, int tid) {
             if (!r->isLinearized || !r->isActive()) continue;
 
             Mat18f dp = adHTdeltaF[r->hostIDX + nFrames * r->targetIDX];
-            if (r->targetIDX != 1 || r->hostIDX != 0)
-                Log::Logger::getInstance()->error("targetIDX or host idx is not right {} | {}", r->hostIDX, r->targetIDX);
-
-            RawResidualJacobian * rJ = r->J;
+            RawResidualJacobian *rJ = r->J;
 
 
 
@@ -281,12 +279,13 @@ void EnergyFunctional::calcLEnergyPt(int min, int max, Vec10 *stats, int tid) {
                 float Jdelta = rJ->JIdx[0][i] * Jp_delta_x_1 + rJ->JIdx[1][i] * Jp_delta_y_1 +
                                rJ->JabF[0][i] * dp[6] + rJ->JabF[1][i] * dp[7];
                 E.updateSingleNoShift((float) (Jdelta * (Jdelta + 2 * r->res_toZeroF[i])));
+                std::cout << "i " << i << std::endl;
             }
-
         }
         E.updateSingle(p->deltaF * p->deltaF * p->priorF);
     }
     E.finish();
+
 
     (*stats)[0] += E.A;
 }
@@ -315,25 +314,24 @@ void EnergyFunctional::setDeltaF(CalibHessian *HCalib) {
         for (int t = 0; t < nFrames; t++) {
             int idx = h + t * nFrames;
             adHTdeltaF[idx] =
-                    eFrames[h]->data->pose->get_state_minus_stateZero().head<8>().cast<float>().transpose() * adHostF[idx]
-                    + eFrames[t]->data->pose->get_state_minus_stateZero().head<8>().cast<float>().transpose() *
+                    eFrames[h]->data->get_state_minus_stateZero().head<8>().cast<float>().transpose() * adHostF[idx]
+                    + eFrames[t]->data->get_state_minus_stateZero().head<8>().cast<float>().transpose() *
                       adTargetF[idx];
         }
 
     cDeltaF = HCalib->value_minus_value_zero.cast<float>();
     for (EFFrame *f: eFrames) {
-        f->delta = f->data->pose->get_state_minus_stateZero().head<8>();
-        f->delta_prior = (f->data->pose->get_state() - f->data->pose->getPriorZero()).head<8>();
+        f->delta = f->data->get_state_minus_stateZero().head<8>();
+        f->delta_prior = (f->data->get_state() - f->data->getPriorZero()).head<8>();
 
         for (EFPoint *p: f->points)
             p->deltaF = p->data->idepth - p->data->idepth_zero;
     }
-
     EFDeltaValid = true;
 }
 
 void EnergyFunctional::solveSystemF(int iteration, double lambda, CalibHessian *HCalib) {
-    lambda = 1e-5;
+    //lambda = 1e-5;
 
     assert(EFDeltaValid);
     assert(EFAdjointsValid);
@@ -418,8 +416,8 @@ void EnergyFunctional::resubstituteF_MT(VecX x, CalibHessian *HCalib, bool MT) {
     Mat18f *xAd = new Mat18f[nFrames * nFrames];
     VecCf cstep = xF.head<CPARS>();
     for (EFFrame *h: eFrames) {
-        h->data->pose->step.head<8>() = -x.segment<8>(CPARS + 8 * h->idx);
-        h->data->pose->step.tail<2>().setZero();
+        h->data->step.head<8>() = -x.segment<8>(CPARS + 8 * h->idx);
+        h->data->step.tail<2>().setZero();
 
         for (EFFrame *t: eFrames)
             xAd[nFrames * h->idx + t->idx] =

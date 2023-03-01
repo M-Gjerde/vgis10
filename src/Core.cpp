@@ -25,35 +25,33 @@ namespace VO {
     bool Core::spin() {
 
         std::shared_ptr<Frame> frame = m_FrameClass->getNextFrame(m_CamCal.get());
-        frame->pose->marginalizedAt = m_Tracker->allFrameHistory.size();
-        m_Tracker->allFrameHistory.push_back(frame->pose);
-
+        frame->shell->marginalizedAt = m_Tracker->allFrameHistory.size();
+        frame->shell->camToWorld = SE3(); 		// no lock required, as fh is not used anywhere yet.
+        frame->shell->aff_g2l = AffLight(0,0);
+        frame->shell->marginalizedAt = frame->shell->id = m_Tracker->allFrameHistory.size();
+        frame->shell->incoming_id = m_FrameClass->m_FrameID;
+        m_Tracker->allFrameHistory.push_back(frame->shell);
         if (!m_Tracker->initialized) {
             std::shared_ptr<Frame> firstFrame = frame;
 
             // Set initial frame
             if (!m_Tracker->firstFrame) {
+                Log::Logger::getInstance()->info("Initializing with first frame");
                 CandidatePointInfo info;
                 m_Tracker->firstFrame = firstFrame;
                 initializeCandidatePoints(m_Tracker->firstFrame, info, m_CamCal.get(), &m_Tracker->points);
+            } else {
+                if (m_Tracker->initializerTrackFrame(frame, m_CamCal.get())) {
+                    m_Tracker->initializeFromInitializer();
+                    m_Tracker->takeTrackedFrame(m_Tracker->secondFrame, true);
+                    m_IsRunning = true;
+                } else {
+                    frame->shell->poseValid = false;
+
+                }
             }
 
-            // Start tracking w.r.t initial frame
-            while (true) {
-                auto f = m_FrameClass->getNextFrame(m_CamCal.get());
-                f->pose->frameToWorld = SE3(); 		// no lock required, as fh is not used anywhere yet.
-                f->pose->aff_g2l() = AffLight(0,0);
-                f->pose->marginalizedAt = m_Tracker->allFrameHistory.size();
-                m_Tracker->allFrameHistory.push_back(f->pose);
-                if (m_Tracker->initializerTrackFrame(f, m_CamCal.get()))
-                    break;
-                else
-                    f->pose->poseValid = false;
-            }
 
-            m_Tracker->initializeFromInitializer();
-            m_IsRunning = true;
-            m_Tracker->takeTrackedFrame(m_Tracker->secondFrame, true);
         } else {
             // Do front-end Operation
             // =========================== SWAP tracking reference?. =========================
@@ -65,28 +63,33 @@ namespace VO {
             }
 
 
-        Vec4 tres = m_Tracker->trackNewCoarse(frame);
-        if(!std::isfinite((double)tres[0]) || !std::isfinite((double)tres[1]) || !std::isfinite((double)tres[2]) || !std::isfinite((double)tres[3]))
-        {
-            printf("Initial Tracking failed: LOST!\n");
-            return false;
-        }
+            Vec4 tres = m_Tracker->trackNewCoarse(frame);
+            if (!std::isfinite((double) tres[0]) || !std::isfinite((double) tres[1]) ||
+                !std::isfinite((double) tres[2]) || !std::isfinite((double) tres[3])) {
+                printf("Initial Tracking failed: LOST!\n");
+                return false;
+            }
 
-        bool needToMakeKF;
+            bool needToMakeKF;
 
-            Vec2 refToFh=AffLight::fromToVecExposure(m_Tracker->coarseTracker->lastRef->pose->abExposure, frame->pose->abExposure,
-                                                     m_Tracker->coarseTracker->lastRef_aff_g2l, frame->pose->aff_g2l());
+            Vec2 refToFh = AffLight::fromToVecExposure(m_Tracker->coarseTracker->lastRef->abExposure,
+                                                       frame->abExposure,
+                                                       m_Tracker->coarseTracker->lastRef_aff_g2l,
+                                                       frame->aff_g2l());
 
             // BRIGHTNESS CHECK
-            needToMakeKF = m_Tracker->allFrameHistory.size()== 1 ||
-                           setting_kfGlobalWeight*setting_maxShiftWeightT *  sqrtf((double)tres[1]) / (m_Tracker->calibration->wG[0]+m_Tracker->calibration->hG[0]) +
-                           setting_kfGlobalWeight*setting_maxShiftWeightR *  sqrtf((double)tres[2]) / (m_Tracker->calibration->wG[0]+m_Tracker->calibration->hG[0]) +
-                           setting_kfGlobalWeight*setting_maxShiftWeightRT * sqrtf((double)tres[3]) / (m_Tracker->calibration->wG[0]+m_Tracker->calibration->hG[0]) +
-                           setting_kfGlobalWeight*setting_maxAffineWeight * fabs(logf((float)refToFh[0])) > 1 ||
-                           2*m_Tracker->coarseTracker->firstCoarseRMSE < tres[0];
+            needToMakeKF = m_Tracker->allFrameHistory.size() == 1 ||
+                           setting_kfGlobalWeight * setting_maxShiftWeightT * sqrtf((double) tres[1]) /
+                           (m_Tracker->calibration->wG[0] + m_Tracker->calibration->hG[0]) +
+                           setting_kfGlobalWeight * setting_maxShiftWeightR * sqrtf((double) tres[2]) /
+                           (m_Tracker->calibration->wG[0] + m_Tracker->calibration->hG[0]) +
+                           setting_kfGlobalWeight * setting_maxShiftWeightRT * sqrtf((double) tres[3]) /
+                           (m_Tracker->calibration->wG[0] + m_Tracker->calibration->hG[0]) +
+                           setting_kfGlobalWeight * setting_maxAffineWeight * fabs(logf((float) refToFh[0])) > 1 ||
+                           2 * m_Tracker->coarseTracker->firstCoarseRMSE < tres[0];
 
 
-        m_Tracker->takeTrackedFrame(frame, needToMakeKF);
+            m_Tracker->takeTrackedFrame(frame, needToMakeKF);
         }
 
         cv::waitKey(0);

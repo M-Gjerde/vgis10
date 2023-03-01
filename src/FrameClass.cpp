@@ -45,7 +45,6 @@ std::shared_ptr<VO::Frame> VO::FrameClass::readFrame() {
     }
     frame->inHeight = height;
     frame->inWidth = width;
-    frame->id = m_FrameID;
     stbi_image_free(pixels);
 
 

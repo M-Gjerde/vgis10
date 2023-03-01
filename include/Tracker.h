@@ -78,8 +78,8 @@ public:
         numsLog->open("logs/numsLog.txt", std::ios::trunc | std::ios::out);
         numsLog->precision(10);
 
-        system("rm -rf logs");
-        system("mkdir logs");
+        int i = system("rm -rf logs");
+        i = system("mkdir logs");
 
         eigenAllLog = new std::ofstream();
         eigenAllLog->open("logs/eigenAllLog.txt", std::ios::trunc | std::ios::out);

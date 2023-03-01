@@ -27,7 +27,7 @@ namespace VO {
     struct Frame {
         Frame() {
             Log::Logger::getInstance()->info("Created Frame Object {}", static_cast<void*>(this));
-            pose = new VO::FramePose();
+            shell = new VO::FramePose();
         }
 
         ~Frame() {
@@ -64,9 +64,7 @@ namespace VO {
         EFFrame* efFrame;
 
         // Pose stuff
-        FramePose* pose;
-        FramePose* trackingRef;
-        std::vector<FrameToFramePrecalc,Eigen::aligned_allocator<FrameToFramePrecalc>> targetPrecalc;
+        FramePose* shell;
 
         // Calibration stuff (global)
         int widthLevel[PYR_LEVELS]{}, heightLevel[PYR_LEVELS]{};
@@ -76,10 +74,125 @@ namespace VO {
 
         float abExposure = 1; // exposure time in ms. // TODO set in image reader class
         float timestamp = 0;
-        uint32_t id = 0;            // Overall frame number into the system
-        uint32_t trackingID = 0;    // Number of frames tracked
+        uint32_t frameID = 0-1;           // incremental ID for keyframes only!
+        uint32_t trackingID = 0;
 
         bool flaggedForMarginalization = false;
+
+
+        // Tracking info
+        Mat66 nullspaces_pose;
+        Mat42 nullspaces_affine;
+        Vec6 nullspaces_scale;
+
+        // variable info.
+        SE3 worldToCam_evalPT;
+        Vec10 state_zero;
+        Vec10 state_scaled;
+        Vec10 state;	// [0-5: worldToCam-leftEps. 6-7: a,b]
+        Vec10 step;
+        Vec10 step_backup;
+        Vec10 state_backup;
+        // precalc values
+        SE3 PRE_worldToCam;
+        SE3 PRE_camToWorld;
+        std::vector<FrameToFramePrecalc,Eigen::aligned_allocator<FrameToFramePrecalc>> targetPrecalc;
+
+        EIGEN_STRONG_INLINE const SE3 &get_worldToCam_evalPT() const {return worldToCam_evalPT;}
+        EIGEN_STRONG_INLINE const Vec10 &get_state_zero() const {return state_zero;}
+        EIGEN_STRONG_INLINE const Vec10 &get_state() const {return state;}
+        EIGEN_STRONG_INLINE const Vec10 &get_state_scaled() const {return state_scaled;}
+        EIGEN_STRONG_INLINE const Vec10 get_state_minus_stateZero() const {return get_state() - get_state_zero();}
+
+        inline Vec6 w2c_leftEps() const {return get_state_scaled().head<6>();}
+        inline AffLight aff_g2l() const {return AffLight(get_state_scaled()[6], get_state_scaled()[7]);}
+        inline AffLight aff_g2l_0() const {return AffLight(get_state_zero()[6]*SCALE_A, get_state_zero()[7]*SCALE_B);}
+
+        void setStateZero(const Vec10 &state_zero);
+        void setState(const Vec10 &state)
+        {
+
+            this->state = state;
+            state_scaled.segment<3>(0) = SCALE_XI_TRANS * state.segment<3>(0);
+            state_scaled.segment<3>(3) = SCALE_XI_ROT * state.segment<3>(3);
+            state_scaled[6] = SCALE_A * state[6];
+            state_scaled[7] = SCALE_B * state[7];
+            state_scaled[8] = SCALE_A * state[8];
+            state_scaled[9] = SCALE_B * state[9];
+
+            PRE_worldToCam = SE3::exp(w2c_leftEps()) * get_worldToCam_evalPT();
+            PRE_camToWorld = PRE_worldToCam.inverse();
+            //setCurrentNullspace();
+        };
+        void setStateScaled(const Vec10 &state_scaled)
+        {
+
+            this->state_scaled = state_scaled;
+            state.segment<3>(0) = SCALE_XI_TRANS_INVERSE * state_scaled.segment<3>(0);
+            state.segment<3>(3) = SCALE_XI_ROT_INVERSE * state_scaled.segment<3>(3);
+            state[6] = SCALE_A_INVERSE * state_scaled[6];
+            state[7] = SCALE_B_INVERSE * state_scaled[7];
+            state[8] = SCALE_A_INVERSE * state_scaled[8];
+            state[9] = SCALE_B_INVERSE * state_scaled[9];
+
+            PRE_worldToCam = SE3::exp(w2c_leftEps()) * get_worldToCam_evalPT();
+            PRE_camToWorld = PRE_worldToCam.inverse();
+            //setCurrentNullspace();
+        };
+        void setEvalPT(const SE3 &worldToCam_evalPT, const Vec10 &state)
+        {
+
+            this->worldToCam_evalPT = worldToCam_evalPT;
+            setState(state);
+            setStateZero(state);
+        };
+
+
+
+        void setEvalPT_scaled(const SE3 &worldToCam_evalPT, const AffLight &aff_g2l)
+        {
+            Vec10 initial_state = Vec10::Zero();
+            initial_state[6] = aff_g2l.a;
+            initial_state[7] = aff_g2l.b;
+            this->worldToCam_evalPT = worldToCam_evalPT;
+            setStateScaled(initial_state);
+            setStateZero(this->get_state());
+        };
+
+        Vec10 getPrior()
+        {
+            Vec10 p =  Vec10::Zero();
+            if(frameID==0)
+            {
+                p.head<3>() = Vec3::Constant(setting_initialTransPrior);
+                p.segment<3>(3) = Vec3::Constant(setting_initialRotPrior);
+
+                p[6] = setting_initialAffAPrior;
+                p[7] = setting_initialAffBPrior;
+            }
+            else
+            {
+                if(setting_affineOptModeA < 0)
+                    p[6] = setting_initialAffAPrior;
+                else
+                    p[6] = setting_affineOptModeA;
+
+                if(setting_affineOptModeB < 0)
+                    p[7] = setting_initialAffBPrior;
+                else
+                    p[7] = setting_affineOptModeB;
+            }
+            p[8] = setting_initialAffAPrior;
+            p[9] = setting_initialAffBPrior;
+            return p;
+        }
+
+
+        inline Vec10 getPriorZero()
+        {
+            return Vec10::Zero();
+        }
+
         /**@brief  Quick display functil for this frame. Displays whatever is in the dataf */
         void display(bool blocking = true, const std::string &windowName = "display") {
             cv::Mat img = cv::Mat(height, width, CV_32F, dataf.data());
@@ -126,6 +239,8 @@ namespace VO {
         }
     };
 
+
+
     struct FrameToFramePrecalc {
         VO::Frame *host;    // defines row
         VO::Frame *target;    // defines column
@@ -158,16 +273,14 @@ namespace VO {
             this->host = host;
             this->target = target;
 
-            SE3 leftToLeft_0 = target->pose->get_worldToCam_evalPT() * host->pose->get_worldToCam_evalPT().inverse();
+            SE3 leftToLeft_0 = target->get_worldToCam_evalPT() * host->get_worldToCam_evalPT().inverse();
             PRE_RTll_0 = (leftToLeft_0.rotationMatrix()).cast<float>();
             PRE_tTll_0 = (leftToLeft_0.translation()).cast<float>();
 
-
-            SE3 leftToLeft = target->pose->PRE_worldToCam * host->pose->PRE_camToWorld;
+            SE3 leftToLeft = target->PRE_worldToCam * host->PRE_camToWorld;
             PRE_RTll = (leftToLeft.rotationMatrix()).cast<float>();
             PRE_tTll = (leftToLeft.translation()).cast<float>();
             distanceLL = leftToLeft.translation().norm();
-
 
             Mat33f K = Mat33f::Zero();
             K(0, 0) = HCalib->fxl();
@@ -179,10 +292,8 @@ namespace VO {
             PRE_RKiTll = PRE_RTll * K.inverse();
             PRE_KtTll = K * PRE_tTll;
 
-
-            PRE_aff_mode = AffLight::fromToVecExposure(host->pose->abExposure, target->pose->abExposure,
-                                                       host->pose->aff_g2l(), target->pose->aff_g2l()).cast<float>();
-            PRE_b0_mode = host->pose->aff_g2l_0().b;
+            PRE_aff_mode = AffLight::fromToVecExposure(host->abExposure, target->abExposure, host->aff_g2l(), target->aff_g2l()).cast<float>();
+            PRE_b0_mode = host->aff_g2l_0().b;
         }
     };
 
