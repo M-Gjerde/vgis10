@@ -24,6 +24,8 @@ namespace VO {
       std::unique_ptr<FrameClass> m_FrameClass;
       std::unique_ptr<CameraCalibration> m_CamCal;
       std::unique_ptr<Tracker> m_Tracker;
+
+      cv::Mat posImage;
   };
 };
 

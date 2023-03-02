@@ -20,6 +20,8 @@ namespace VO {
 
         m_Tracker = std::make_unique<Tracker>(m_CamCal.get());
         m_IsRunning = true;
+
+        posImage = cv::Mat(800, 800, CV_8UC3, cv::Scalar::zeros());
     }
 
     bool Core::spin() {
@@ -90,9 +92,21 @@ namespace VO {
 
 
             m_Tracker->takeTrackedFrame(frame, needToMakeKF);
+
+            auto& pose = m_Tracker->allFrameHistory.back()->camToWorld;
+            auto x = pose.translation().x()* 100;
+            auto y = pose.translation().y()* 100;
+            auto z = pose.translation().z()* 100;
+
+            cv::circle(posImage, cv::Point(x + 400, y + 400), 1, cv::Scalar(255, 0, 0));
+            Log::Logger::getInstance()->info("Position: {} {} {}", x, y, z);
+            cv::imshow("positions", posImage);
+            cv::waitKey(1);
+
         }
 
-        cv::waitKey(0);
+
+
         Log::Logger::getInstance()->spinNumber++;
 
         return m_IsRunning;
