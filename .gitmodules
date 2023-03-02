@@ -7,6 +7,9 @@
 [submodule "external/rapidyaml"]
 	path = external/rapidyaml
 	url = https://github.com/biojppm/rapidyaml
+[submodule "external/--force"]
+	path = external/--force
+	url = https://github.com/jbeder/yaml-cpp
 [submodule "external/yaml-cpp"]
 	path = external/yaml-cpp
 	url = https://github.com/jbeder/yaml-cpp

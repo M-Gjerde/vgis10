@@ -12,16 +12,16 @@ namespace VO {
     Core::Core() {
         //m_FrameClass = std::make_unique<FrameClass>("/home/magnus/CLionProjects/vgis10/test_images/images");
         m_CamCal = std::make_unique<CameraCalibration>(
-                "/home/magnus/CLionProjects/data/tum_mono_dataset/sequence_02/vignette.png",
-                "/home/magnus/CLionProjects/data/tum_mono_dataset/sequence_02/pcalib.txt");
+                "../data/sequence_02_mono/vignette.png",
+                "../data/sequence_02_mono/pcalib.txt");
         m_FrameClass = std::make_unique<FrameClass>(
-                "/home/magnus/CLionProjects/data/tum_mono_dataset/sequence_02/images");
+                "../data/sequence_02_mono/images");
         //m_CamCal = std::make_unique<CameraCalibration>("/home/magnus/CLionProjects/vgis10/test_images/vignetteSmoothed.png", "/home/magnus/CLionProjects/vgis10/test_images/pcalib.txt");
 
         m_Tracker = std::make_unique<Tracker>(m_CamCal.get());
         m_IsRunning = true;
 
-        posImage = cv::Mat(800, 800, CV_8UC3, cv::Scalar::zeros());
+        posImage = cv::Mat::zeros(800, 800, CV_8UC3);
     }
 
     bool Core::spin() {

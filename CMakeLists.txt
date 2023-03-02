@@ -33,7 +33,7 @@ set(SRC_FILES
         src/Frame.cpp)
 
 add_executable(vgis10 ${SRC_FILES})
-target_link_libraries(vgis10 fmt::fmt ${OpenCV_LIBS} Eigen3::Eigen sophus yaml-cpp::yaml-cpp -lboost_thread)
+target_link_libraries(vgis10 fmt::fmt ${OpenCV_LIBS} Eigen3::Eigen sophus yaml-cpp::yaml-cpp -pthread -lboost_thread)
 
 add_custom_command(TARGET vgis10
         POST_BUILD
